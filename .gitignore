@@ -1,0 +1,9 @@
+/.venv/
+/Test/
+/build/
+/dist/
+/LangmuirProbeIVAnalyserUB.iss
+/Langmuir_Probe_IV_Analyser_UB.spec
+/installer/
+/Test/
+/.idea/
