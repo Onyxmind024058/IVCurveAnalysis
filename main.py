@@ -1,4 +1,5 @@
 import sys
+import os
 import xml.etree.ElementTree as ET
 import numpy as np
 
@@ -2227,13 +2228,13 @@ if __name__ == "__main__":
     from PySide6.QtWidgets import QSplashScreen, QProgressBar, QLabel
     from PySide6.QtCore import Qt, QTimer
 
-    app.setWindowIcon(QIcon("icon.ico"))
+    app.setWindowIcon(QIcon(resource_path("icon.ico")))
 
     # -------------------------------------------------
     # Splash screen
     # -------------------------------------------------
 
-    pixmap = QPixmap("splash.png")
+    pixmap = QPixmap(resource_path("splash.png"))
 
     splash = QSplashScreen(
         pixmap,
