@@ -4,6 +4,11 @@ A Python/PySide6 graphical application for loading `.lda` Langmuir probe files, 
 
 The program is designed for interactive analysis of Langmuir probe measurements, especially when automatic fitting is not sufficient and the user needs to manually select fit regions.
 
+To use the software, you can either download the last release and follow the setup instruction.
+Or compile this code using pyinstaller: 
+```bash
+pyinstaller --onefile --windowed --name Langmuir_Probe_IV_Analyser_UB --icon=icon.ico --add-data "splash.png;." --add-data "icon.ico;." main.py
+```
 ---
 
 ## 1. Main Features
