@@ -22,6 +22,7 @@ The app lives in the `web/` folder and runs entirely in the browser, in the spir
 - **Data range:** in the *Data range* panel, the curve can be reduced before any analysis: skip the first/last N points of every sweep (e.g. start-up transients) and/or keep only a voltage window, set by typing or by dragging the lines on the main plot. All analyses and exports use the reduced curve.
 - **Theme:** University of Basel light/dark theme (switch in the top-right corner).
 - **Host it:** the folder is static, so it can be served from GitHub Pages or any web server.
+- **Install / offline:** from the GitHub Pages site the analyser can be installed as an app (Chrome/Edge: *Install app* button or the icon in the address bar; Safari: Share → *Add to Dock* / *Add to Home Screen*). It then has its own icon and window and works without internet. When online, the latest version is loaded automatically. In Chrome/Edge the installed app can also open `.lda`/`.csv` files via *Open with*. (Opening `web/index.html` from disk works as before, but cannot be installed.)
 - **What's new:** the *What's new* button lists the changes of each version; it opens by itself once after an update.
 
 ---

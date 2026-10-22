@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.0.0";
+  const APP_VERSION = "2.1.0";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -77,6 +77,8 @@
     try { localStorage.setItem("ivcurve.theme", theme); } catch (_) { /* ignore */ }
     for (const b of document.querySelectorAll("#themeSwitch button")) b.setAttribute("aria-pressed", String(b.dataset.theme === theme));
     $("themeName").textContent = theme === "dark" ? "Dark" : "Light";
+    // window title bar colour of the installed app
+    document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "dark" ? "#2D373C" : "#FFFFFF");
     IV.Plot.rerenderAll();
   }
 
@@ -462,6 +464,16 @@
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
     {
+      version: "2.1.0",
+      title: "Install as an app, works offline",
+      items: [
+        "Install the analyser as an app (Chrome/Edge: “Install app” button or the icon in the address bar; Safari: Share → Add to Dock / Home Screen). It gets its own icon and window.",
+        "Works without internet after the first visit; the status bar shows when the saved copy is used.",
+        "When online, the newest version is always loaded and saved for offline use.",
+        "Installed in Chrome/Edge, .lda and .csv files can be opened directly with “Open with → IV Analyser”.",
+      ],
+    },
+    {
       version: "2.0.0",
       title: "Browser edition",
       items: [
@@ -614,4 +626,5 @@
 
   document.addEventListener("DOMContentLoaded", init);
   IV.state = state;
+  IV.openFile = openFile;
 })(window.IV = window.IV || {});
