@@ -17,8 +17,10 @@
   const $ = (id) => document.getElementById(id);
 
   const state = {
-    scans: null,
+    rawScans: null,        // scans as loaded
+    scans: null,           // scans after the data-range reduction (used everywhere)
     fileName: null,
+    crop: { enabled: false, skipStart: 0, skipEnd: 0, from: NaN, to: NaN },
     omlResults: null,      // latest automatic or manual OML result (feeds EEPF)
     lastResults: null,     // latest result of any method (exported)
     lastEEPF: null,
@@ -110,10 +112,14 @@
   // ---------------------------------------------------------------------------
 
   function setScans(scans, name) {
+    state.rawScans = scans;
     state.scans = scans;
     state.fileName = name;
     // new data invalidates every earlier analysis
     state.omlResults = state.lastResults = state.lastEEPF = null;
+    $("cropEnable").checked = false;
+    resetCropRange();
+    applyCrop(false);
     $("fileName").textContent = name;
     $("fileName").title = name;
     $("welcome").classList.add("hidden");
@@ -122,21 +128,110 @@
     log(`Loaded: ${name}`);
     log(`Number of scans: ${scans.length}`);
     log(`Points per scan: ${scans[0].IData.length}`);
-    status(`Ready — ${scans.length} scans × ${scans[0].IData.length} points loaded`);
+    status(`Ready — ${scans.length} scan${scans.length === 1 ? "" : "s"} × ${scans[0].IData.length} points loaded`);
     plotData();
   }
 
   async function openFile(file) {
     try {
       const text = await file.text();
-      setScans(IV.lda.parseLDA(text), file.name);
+      const looksXML = /^\s*</.test(text.replace(/^﻿/, ""));
+      if (/\.(lda|xml)$/i.test(file.name) || looksXML) {
+        setScans(IV.lda.parseLDA(text), file.name);
+      } else {
+        const scans = await IV.csv.importCSV(text, file.name);
+        if (scans) setScans(scans, file.name);
+      }
     } catch (e) {
       IV.ui.message("Error loading file", IV.escape(e.message));
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Data range reduction (applied before every analysis)
+  // ---------------------------------------------------------------------------
+
+  function fullExtent() {
+    const xkey = $("xaxis").value;
+    let lo = Infinity, hi = -Infinity;
+    for (const s of state.rawScans) for (const v of s[xkey]) if (Number.isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    return [lo, hi];
+  }
+
+  function resetCropRange() {
+    if (!state.rawScans) return;
+    const [lo, hi] = fullExtent();
+    const round = (v) => Number(v.toFixed(4));
+    $("cropFrom").value = round(lo);
+    $("cropTo").value = round(hi);
+    $("skipStart").value = 0;
+    $("skipEnd").value = 0;
+  }
+
+  function readCrop() {
+    const int = (id) => Math.max(0, Math.trunc(Number($(id).value) || 0));
+    const from = parseFloat($("cropFrom").value), to = parseFloat($("cropTo").value);
+    return {
+      enabled: $("cropEnable").checked,
+      skipStart: int("skipStart"), skipEnd: int("skipEnd"),
+      from: Math.min(from, to), to: Math.max(from, to),
+    };
+  }
+
+  /** Per scan: drop the first/last N acquired points, then keep only from <= x <= to. */
+  function cropScans(raw, crop, xkey) {
+    return raw.map((s) => {
+      const n = s.IData.length;
+      const keep = [];
+      for (let k = crop.skipStart; k < n - crop.skipEnd; k++) {
+        const x = s[xkey][k];
+        if (!(x < crop.from) && !(x > crop.to)) keep.push(k);
+      }
+      const pick = (a) => Float64Array.from(keep, (k) => a[k]);
+      return { ...s, VData: pick(s.VData), RefData: pick(s.RefData), IData: pick(s.IData) };
+    });
+  }
+
+  /** Recompute state.scans from the raw data and the Data range panel. */
+  function applyCrop(userChange = true) {
+    if (!state.rawScans) return;
+    const crop = readCrop();
+    for (const node of document.querySelectorAll("[data-crop]")) node.disabled = !crop.enabled;
+    const info = $("cropInfo");
+    const total = state.rawScans[0].IData.length;
+
+    let scans = state.rawScans;
+    if (crop.enabled) {
+      const cropped = cropScans(state.rawScans, crop, $("xaxis").value);
+      const fewest = Math.min(...cropped.map((s) => s.IData.length));
+      if (fewest < 10) {
+        info.textContent = `Range too small: only ${fewest} points left in a scan (need ≥ 10). Not applied.`;
+        info.classList.add("warn");
+        return;
+      }
+      scans = cropped;
+      info.textContent = `Using ${cropped[0].IData.length} of ${total} points per scan`
+        + (state.rawScans.length > 1 ? ` (fewest: ${fewest})` : "") + ".";
+    } else {
+      info.textContent = `Full curve: ${total} points per scan. Tick the box to reduce it before analysis.`;
+    }
+    info.classList.remove("warn");
+
+    const changed = JSON.stringify(crop) !== JSON.stringify(state.crop);
+    state.crop = crop;
+    state.scans = scans;
+    if (userChange && changed && (state.omlResults || state.lastResults)) {
+      state.omlResults = state.lastResults = state.lastEEPF = null;
+      log("Data range changed — earlier results cleared; run the analysis again.");
+    }
+    if (userChange) {
+      status(crop.enabled ? `Data range: ${info.textContent}` : "Data range reduction off");
+      plotData();
+    }
+  }
+
   function meanCurve() {
-    if (!state.scans) throw new Error("Please load a .lda file first.");
+    if (!state.scans) throw new Error("Please load a .lda or .csv file first.");
     const xkey = $("xaxis").value;
     return { xkey, ...N.averageScans(state.scans, xkey) };
   }
@@ -145,8 +240,22 @@
     if (!state.scans) return;
     const { xkey, x, imean, istd, currents } = meanCurve();
     const traces = [];
+    const crop = state.crop;
+    let vlines = [], shades = [];
+    if (crop.enabled) {
+      // faint full-range mean so the removed parts stay visible for reference
+      const raw = N.averageScans(state.rawScans, xkey);
+      const lo = N.nanmin(raw.x), hi = N.nanmax(raw.x);
+      traces.push({ x: raw.x, y: raw.imean, name: "full curve (excluded parts)", width: 1.2, dash: "dot",
+        color: getComputedStyle(document.documentElement).getPropertyValue("--text-lo").trim() });
+      vlines = [
+        { x: crop.from, label: "range start", drag: "cropFrom", dash: "dash" },
+        { x: crop.to, label: "range end", drag: "cropTo", dash: "dash" },
+      ];
+      shades = [{ x0: lo, x1: crop.from }, { x0: crop.to, x1: hi }];
+    }
     if ($("showAll").checked) {
-      state.scans.forEach((s, k) => traces.push({ x, y: currents[k], name: `scan ${s.id}`, width: 1 }));
+      state.scans.forEach((s, k) => traces.push({ x, y: currents[k], name: s.label || `scan ${s.id}`, width: 1 }));
     }
     if ($("showMean").checked) {
       traces.push({
@@ -155,7 +264,7 @@
       });
       traces.push({ x, y: imean, name: "mean", width: 2.6, color: getComputedStyle(document.documentElement).getPropertyValue("--plot-2").trim() });
     }
-    mainPlot.render({ title: "Langmuir probe I-V curves", xlabel: xkey, ylabel: "Current (A)", traces, uirevision: xkey });
+    mainPlot.render({ title: "Langmuir probe I-V curves", xlabel: xkey, ylabel: "Current (A)", traces, vlines, shades, uirevision: xkey });
   }
 
   // ---------------------------------------------------------------------------
@@ -164,7 +273,7 @@
 
   function needData() {
     if (state.scans) return true;
-    IV.ui.message("No data", "Please load a .lda file first.");
+    IV.ui.message("No data", "Please load a .lda or .csv file first.");
     return false;
   }
 
@@ -303,6 +412,14 @@
       out.push(csvRow(["Langmuir probe full export"]));
       out.push(csvRow(["x axis", xkey]));
       out.push(csvRow(["probe area m2", area]));
+      const c = state.crop;
+      out.push(csvRow(["data range reduction", c.enabled ? "on" : "off"]));
+      if (c.enabled) {
+        out.push(csvRow(["skipped first points", c.skipStart]));
+        out.push(csvRow(["skipped last points", c.skipEnd]));
+        out.push(csvRow([`${xkey} range from`, c.from]));
+        out.push(csvRow([`${xkey} range to`, c.to]));
+      }
       out.push("");
       out.push(csvRow(["Analysis results"]));
       if (state.lastResults) {
@@ -387,6 +504,11 @@
   function init() {
     loadSettings();
     mainPlot = new IV.Plot($("mainPlot"), { filename: "iv_curves" });
+    // dragging the range lines on the main plot edits the Data range fields
+    mainPlot.onDrag = (id, x, final) => {
+      $(id).value = Number(x.toFixed(4));
+      if (final) applyCrop();
+    };
 
     const fileInput = $("fileInput");
     $("openBtn").addEventListener("click", () => fileInput.click());
@@ -406,7 +528,19 @@
     $("aboutBtn").addEventListener("click", showAbout);
     $("clearLog").addEventListener("click", () => $("log").replaceChildren(el("div.empty-state", { text: "Log cleared." })));
 
-    for (const id of ["xaxis", "showAll", "showMean"]) $(id).addEventListener("change", () => { saveSettings(); plotData(); });
+    for (const id of ["showAll", "showMean"]) $(id).addEventListener("change", () => { saveSettings(); plotData(); });
+    $("xaxis").addEventListener("change", () => {
+      saveSettings();
+      // the voltage window is expressed on the selected axis, so start it afresh
+      const from = $("cropFrom").value, to = $("cropTo").value;
+      const [lo, hi] = state.rawScans ? fullExtent() : [NaN, NaN];
+      if (state.rawScans) { $("cropFrom").value = Number(lo.toFixed(4)); $("cropTo").value = Number(hi.toFixed(4)); }
+      if (state.crop.enabled && (from !== $("cropFrom").value || to !== $("cropTo").value)) log("X axis changed — voltage range reset to the full extent.");
+      applyCrop();
+    });
+    $("cropEnable").addEventListener("change", () => applyCrop());
+    for (const id of ["skipStart", "skipEnd", "cropFrom", "cropTo"]) $(id).addEventListener("change", () => applyCrop());
+    $("cropReset").addEventListener("click", () => { resetCropRange(); applyCrop(); });
     for (const id of ["diameter", "length", "ionFraction", "smoothWindow"]) {
       $(id).addEventListener("change", () => { try { numberValue(id); saveSettings(); } catch (_) { /* flagged red */ } });
     }

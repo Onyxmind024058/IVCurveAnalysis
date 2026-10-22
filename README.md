@@ -16,6 +16,8 @@ The `web/` folder contains a browser edition of the same analyser, in the spirit
 - **Run it:** open `web/index.html` in any modern browser (double-click it). No Python, no install, no internet required, as all libraries are bundled.
 - **Private:** `.lda` files are read locally by the browser and never uploaded.
 - **Same maths:** `web/js/numerics.js` is a line-by-line port of the analysis functions in `main.py`, and gives the same Vf, Vp, Te, Ies, ne and EEDF/EEPF values as the Python app.
+- **Data files:** opens `.lda` files and CSV/text files. The CSV importer detects the separator (comma, semicolon, tab or spaces) and decimal commas, skips header/metadata lines, and lets you pick the voltage column, the current column(s) (one scan each) and the current unit (A, mA, µA, nA), with a live preview. Files exported by this app can be opened again.
+- **Data range:** in the *Data range* panel, the curve can be reduced before any analysis: skip the first/last N points of every sweep (e.g. start-up transients) and/or keep only a voltage window, set by typing or by dragging the lines on the main plot. All analyses and exports use the reduced curve.
 - **Theme:** University of Basel light/dark theme (switch in the top-right corner).
 - **Host it (optional):** the folder is static, so it can also be served from GitHub Pages or any web server.
 

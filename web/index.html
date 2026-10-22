@@ -30,11 +30,11 @@
 
   <!-- toolbar -->
   <nav class="toolbar" aria-label="Main actions">
-    <button class="btn" id="openBtn" data-tip="Open a .lda file (Ctrl+O)">
+    <button class="btn" id="openBtn" data-tip="Open a .lda or .csv file (Ctrl+O)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h6l2 2h10v10H3z"/></svg>
-      Open .lda
+      Open .lda / .csv
     </button>
-    <input type="file" id="fileInput" accept=".lda,.xml,application/xml,text/xml" hidden>
+    <input type="file" id="fileInput" accept=".lda,.xml,.csv,.tsv,.txt,.dat,application/xml,text/xml,text/csv,text/plain" hidden>
     <button class="btn" id="exampleBtn" data-tip="Synthetic data: Te = 3 eV, Vp = 10 V">Example data</button>
     <span class="sep"></span>
     <button class="btn primary" id="analyseBtn" data-needs-data disabled>Analyse averaged I-V</button>
@@ -71,6 +71,23 @@
       </fieldset>
 
       <fieldset class="group">
+        <legend>Data range</legend>
+        <div class="form">
+          <label class="check full"><input type="checkbox" id="cropEnable" data-needs-data disabled> Reduce curve before analysis</label>
+          <label for="skipStart">Skip first</label>
+          <div class="unit-input"><input type="number" id="skipStart" min="0" step="1" value="0" disabled data-crop><span>pts</span></div>
+          <label for="skipEnd">Skip last</label>
+          <div class="unit-input"><input type="number" id="skipEnd" min="0" step="1" value="0" disabled data-crop><span>pts</span></div>
+          <label for="cropFrom">From</label>
+          <div class="unit-input"><input type="number" id="cropFrom" step="0.1" disabled data-crop><span>V</span></div>
+          <label for="cropTo">To</label>
+          <div class="unit-input"><input type="number" id="cropTo" step="0.1" disabled data-crop><span>V</span></div>
+          <div class="row-actions"><button class="btn" id="cropReset" disabled data-crop>Reset to full range</button></div>
+        </div>
+        <p class="crop-info" id="cropInfo">Skip points at the start/end of each sweep and/or keep only a voltage window. Drag the lines on the plot to adjust.</p>
+      </fieldset>
+
+      <fieldset class="group">
         <legend>Probe / OML settings</legend>
         <div class="form">
           <label for="diameter">Diameter</label>
@@ -85,16 +102,16 @@
       </fieldset>
 
       <p class="muted" style="font-size:11.5px;margin:0">
-        Everything runs in this browser tab. Your .lda files are read locally and never uploaded.
+        Everything runs in this browser tab. Your data files are read locally and never uploaded.
       </p>
     </aside>
 
     <section class="center" aria-label="Plot">
       <div class="welcome" id="welcome">
         <h2>Open a Langmuir probe measurement</h2>
-        <p>Load a <span class="mono">.lda</span> file (or drop it anywhere on this window) to plot the individual and averaged I–V curves and run the OML, EEPF/EEDF and EPFL two-fluid analyses.</p>
+        <p>Load a <span class="mono">.lda</span> or <span class="mono">.csv</span> file (or drop it anywhere on this window) to plot the individual and averaged I–V curves and run the OML, EEPF/EEDF and EPFL two-fluid analyses.</p>
         <div class="actions">
-          <button class="btn primary" id="welcomeOpen">Open .lda file</button>
+          <button class="btn primary" id="welcomeOpen">Open .lda / .csv file</button>
           <button class="btn" id="welcomeExample">Try example data</button>
         </div>
       </div>
@@ -116,7 +133,7 @@
   </footer>
 </div>
 
-<div class="dropzone" id="dropzone">Drop the .lda file to open it</div>
+<div class="dropzone" id="dropzone">Drop the .lda or .csv file to open it</div>
 <div class="toasts" aria-live="polite"></div>
 
 <script src="vendor/plotly-basic.min.js"></script>
@@ -124,6 +141,7 @@
 <script src="js/ui.js"></script>
 <script src="js/plot.js"></script>
 <script src="js/lda.js"></script>
+<script src="js/csv.js"></script>
 <script src="js/manual-oml.js"></script>
 <script src="js/eepf.js"></script>
 <script src="js/epfl.js"></script>

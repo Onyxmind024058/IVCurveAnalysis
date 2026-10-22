@@ -40,6 +40,7 @@
   --plot-5: #C07F1F;
   --plot-6: #3F79B0;
   --plot-band: rgba(46, 156, 146, .22);
+  --plot-shade: rgba(45, 55, 60, .08);
 
   --font: "Helvetica Neue", Arial, sans-serif;
   --font-heading: Georgia, "Times New Roman", serif;
@@ -81,6 +82,7 @@
     --plot-5: #E8B65A;
     --plot-6: #8DB8E0;
     --plot-band: rgba(165, 215, 210, .22);
+  --plot-shade: rgba(242, 245, 244, .07);
   }
 }
 
@@ -117,6 +119,7 @@
   --plot-5: #E8B65A;
   --plot-6: #8DB8E0;
   --plot-band: rgba(165, 215, 210, .22);
+  --plot-shade: rgba(242, 245, 244, .07);
 }
 
 /* ---------- Base ---------- */
@@ -480,3 +483,16 @@ dialog.win[open] { display: flex; flex-direction: column; }
 .welcome p { margin: 0; color: var(--text-lo); max-width: 460px; }
 .welcome .actions { display: flex; gap: 8px; justify-content: center; margin-top: 6px; flex-wrap: wrap; }
 .hidden { display: none !important; }
+
+/* ---------- CSV import window ---------- */
+dialog.win.medium { width: min(1100px, calc(100vw - 32px)); height: min(760px, calc(100vh - 32px)); }
+.import-grid { display: grid; grid-template-columns: minmax(280px, 400px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.import-grid .plot-cell .plot { min-height: 240px; }
+.import-grid table.data td { white-space: nowrap; }
+@media (max-width: 800px) { .import-grid { grid-template-columns: 1fr; } }
+
+/* ---------- Data range (crop) ---------- */
+.crop-info { font-size: 11.5px; color: var(--text-lo); margin: 4px 0 0; }
+.crop-info.warn { color: var(--red); }
+.form .row-actions { grid-column: 1 / -1; display: flex; gap: 6px; }
+.form .row-actions .btn { min-height: 26px; padding: 3px 10px; font-size: 12px; }

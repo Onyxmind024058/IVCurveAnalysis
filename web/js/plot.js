@@ -15,7 +15,7 @@
     return {
       panel: v("--panel"), text: v("--text"), textLo: v("--text-lo"),
       grid: v("--grid"), border: v("--border"), mint: v("--mint"), mintHover: v("--mint-hover"),
-      band: v("--plot-band"), font: v("--font"),
+      band: v("--plot-band"), shade: v("--plot-shade"), font: v("--font"),
       colorway: [1, 2, 3, 4, 5, 6].map((k) => v(`--plot-${k}`)),
     };
   }
@@ -103,6 +103,13 @@
           } : undefined,
         };
       });
+
+      // greyed-out x intervals (e.g. data excluded by the crop)
+      for (const sh of spec.shades || []) {
+        if (!Number.isFinite(sh.x0) || !Number.isFinite(sh.x1) || sh.x1 <= sh.x0) continue;
+        shapes.push({ type: "rect", xref: "x", yref: "paper", x0: sh.x0, x1: sh.x1, y0: 0, y1: 1,
+          fillcolor: t.shade, line: { width: 0 }, layer: "below" });
+      }
 
       const axis = (title, extra = {}) => ({
         title: { text: title || "", font: { size: 12 } },
