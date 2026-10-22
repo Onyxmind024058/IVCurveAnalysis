@@ -124,7 +124,7 @@
   // ---------------------------------------------------------------------------
 
   /** Numeric input. onChange fires on user edits only (like Qt valueChanged with signals unblocked). */
-  function numberField(label, { value = 0, step = 0.1, min, max, decimals = 4, width, onChange, title } = {}) {
+  function numberField(label, { value = 0, step = 0.1, min, max, decimals = 4, width, onChange, title, odd = false } = {}) {
     const input = el("input", { type: "number", step, min, max, title });
     if (width) input.style.width = width;
     const field = el("div.field", {}, [el("label", { text: label }), input]);
@@ -133,7 +133,12 @@
       if (max !== undefined) v = Math.min(max, v);
       return v;
     };
-    const round = (v) => (decimals === 0 ? Math.round(v) : Number(v.toFixed(decimals)));
+    // odd: smoothing windows must be odd; show the value that is really used
+    const round = (v) => {
+      v = decimals === 0 ? Math.round(v) : Number(v.toFixed(decimals));
+      if (odd && v % 2 === 0) v = max !== undefined && v + 1 > max ? v - 1 : v + 1;
+      return v;
+    };
     let current = round(clamp(value));
     input.value = current;
     const api = {

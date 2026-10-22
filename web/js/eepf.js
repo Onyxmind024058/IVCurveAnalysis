@@ -12,13 +12,14 @@
     let current = null;
 
     const recompute = () => update();
-    const distSmooth = numberField("EEDF/EEPF smoothing:", { value: 9, step: 2, min: 3, max: 501, decimals: 0, width: "80px", onChange: recompute });
+    const distSmooth = numberField("EEDF/EEPF smoothing:", { value: 9, step: 2, min: 3, max: 501, decimals: 0, width: "80px", odd: true, onChange: recompute });
     const logY = checkField("Log y-axis", { onChange: recompute });
-    const d2Smooth = numberField("2nd-derivative smoothing:", { value: 31, step: 2, min: 3, max: 501, decimals: 0, width: "80px", onChange: recompute });
+    const d2Smooth = numberField("2nd-derivative smoothing:", { value: 31, step: 2, min: 3, max: 501, decimals: 0, width: "80px", odd: true, onChange: recompute });
     const eMin = numberField("Min energy (eV):", { value: 0, step: 0.5, min: 0, max: 1e6, decimals: 3, width: "90px", onChange: recompute });
     const errorLine = el("span.hint", { style: "color:var(--red)" });
+    const moments = el("span.hint", { style: "margin-left:auto" });
     const controls = el("div.controls", { style: "border-top:none;border-bottom:1px solid var(--border)" },
-      [distSmooth.field, logY.field, d2Smooth.field, eMin.field, errorLine]);
+      [distSmooth.field, logY.field, d2Smooth.field, eMin.field, errorLine, moments]);
 
     const grid = el("div.plot-grid.g2x2");
     const mk = (name) => {
@@ -45,6 +46,10 @@
         return;
       }
       const logy = logY.value;
+      // consistency check: the EEDF integrates to the density
+      const fe = IV.ui.fmtE;
+      moments.textContent = `Density from EEDF: ∫EEDF dε = ${fe(data.n_EEDF_m3, 3)} m⁻³`
+        + (Number.isFinite(oml.ne_m3) ? `  (OML ne = ${fe(oml.ne_m3, 3)} m⁻³)` : "");
       pIV.render({
         title: "Electron current used for derivatives", xlabel: "Probe voltage (V)", ylabel: "Current (A)",
         traces: [{ x: data.V, y: data.I, name: "raw I" }, { x: data.V, y: data.Ie_smooth, name: "smoothed Ie", width: 2.2 }],
@@ -53,11 +58,11 @@
       // zeros cannot be shown on a log axis
       const pos = (a) => (logy ? Array.from(a, (x) => (x > 0 ? x : null)) : a);
       pEEDF.render({
-        title: "EEDF", xlabel: "Energy (eV)", ylabel: "EEDF", logy, uirevision: `eedf-${logy}`,
+        title: "EEDF", xlabel: "Energy (eV)", ylabel: "EEDF (m⁻³ eV⁻¹)", logy, uirevision: `eedf-${logy}`,
         traces: [{ x: data.E_eV, y: pos(data.EEDF), name: "EEDF raw" }, { x: data.E_eV, y: pos(data.EEDF_smooth), name: "EEDF smoothed", width: 2.2 }],
       });
       pEEPF.render({
-        title: "EEPF", xlabel: "Energy (eV)", ylabel: "EEPF", logy, uirevision: `eepf-${logy}`,
+        title: "EEPF", xlabel: "Energy (eV)", ylabel: "EEPF (m⁻³ eV⁻³ᐟ²)", logy, uirevision: `eepf-${logy}`,
         traces: [{ x: data.E_eV, y: pos(data.EEPF), name: "EEPF raw" }, { x: data.E_eV, y: pos(data.EEPF_smooth), name: "EEPF smoothed", width: 2.2 }],
       });
       pD2.render({

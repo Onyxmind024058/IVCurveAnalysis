@@ -13,7 +13,13 @@
   function parseSeries(item, tag) {
     const node = child(item, tag);
     if (!node) throw new Error(`Missing tag: ${tag}`);
-    return Float64Array.from(children(node, "Data"), (d) => parseFloat(d.textContent));
+    const values = Float64Array.from(children(node, "Data"), (d) => {
+      const t = d.textContent.trim();
+      return t === "" ? NaN : Number(t);
+    });
+    const bad = values.findIndex((v) => !Number.isFinite(v));
+    if (bad >= 0) throw new Error(`${tag}: value #${bad + 1} is empty or not a number.`);
+    return values;
   }
 
   function parseLDA(text) {
@@ -32,6 +38,14 @@
         RefData: parseSeries(item, "RefData"),
         IData: parseSeries(item, "IData"),
       };
+    }).map((scan) => {
+      const n = scan.IData.length;
+      if (scan.VData.length !== n || scan.RefData.length !== n) {
+        throw new Error(`Scan ${scan.id}: VData, RefData and IData have different lengths `
+          + `(${scan.VData.length}, ${scan.RefData.length}, ${n}).`);
+      }
+      if (n < 10) throw new Error(`Scan ${scan.id}: only ${n} points.`);
+      return scan;
     });
     if (!scans.length) throw new Error("No scans found");
     scans.sort((a, b) => a.id - b.id);
