@@ -6,7 +6,8 @@
   const N = IV.num;
   const { el, fmtG, fmtE, toast } = IV.ui;
 
-  const APP_VERSION = "0.9a";
+  // Single source of the version shown in the app and used by the update check.
+  const APP_VERSION = "2.0.0";
   const GITHUB_OWNER = "Onyxmind024058";
   const GITHUB_REPO = "IVcurveAnalysis";
   const SETTINGS_KEY = "ivcurve.settings.v1";
@@ -201,8 +202,9 @@
     const total = state.rawScans[0].IData.length;
 
     let scans = state.rawScans;
+    const xkey = $("xaxis").value;
     if (crop.enabled) {
-      const cropped = cropScans(state.rawScans, crop, $("xaxis").value);
+      const cropped = cropScans(state.rawScans, crop, xkey);
       const fewest = Math.min(...cropped.map((s) => s.IData.length));
       if (fewest < 10) {
         info.textContent = `Range too small: only ${fewest} points left in a scan (need ≥ 10). Not applied.`;
@@ -219,7 +221,11 @@
 
     const changed = JSON.stringify(crop) !== JSON.stringify(state.crop);
     state.crop = crop;
-    state.scans = scans;
+    // up/down branches of a triangular sweep are handled as separate scans
+    state.scans = N.splitSweeps(scans, xkey);
+    if (state.scans.length > scans.length && !userChange) {
+      log(`Up/down sweeps detected: ${state.scans.length - scans.length} scan(s) split into separate branches.`);
+    }
     if (userChange && changed && (state.omlResults || state.lastResults)) {
       state.omlResults = state.lastResults = state.lastEEPF = null;
       log("Data range changed — earlier results cleared; run the analysis again.");
@@ -255,7 +261,7 @@
       shades = [{ x0: lo, x1: crop.from }, { x0: crop.to, x1: hi }];
     }
     if ($("showAll").checked) {
-      state.scans.forEach((s, k) => traces.push({ x, y: currents[k], name: s.label || `scan ${s.id}`, width: 1 }));
+      state.scans.forEach((s, k) => traces.push({ x, y: currents[k], name: s.label, width: 1 }));
     }
     if ($("showMean").checked) {
       traces.push({
@@ -292,6 +298,7 @@
         ["Electron temperature Te", `${fmtG(r.Te_eV, 5)} eV`],
         ["Electron saturation current Ies", `${fmtE(r.Ies_A, 5)} A`],
         ["Electron density ne", `${fmtE(r.ne_m3, 5)} m⁻³`],
+        ["Ion current Iis (at Vf)", `${fmtE(r.Iis_A, 5)} A`],
         ["Ion fit Iion² slope a", `${fmtE(r.ion_i2_a)} A²/V`],
         ["Ion fit Iion² offset b", `${fmtE(r.ion_i2_b)} A²`],
       ], "Ion current fit: Iion² = a·V + b. First-pass estimate; use manual mode to check fit regions.");
@@ -321,7 +328,7 @@
             ["Vp from log-fit intersection", fmtG(r.Vp_intersection, 5)],
             ["Final plasma potential Vp", fmtG(r.Vp, 5)],
             ["Electron temperature Te", `${fmtG(r.Te_eV, 5)} eV`],
-            ["Ion saturation current Iis", `${fmtE(r.Iis_A, 5)} A`],
+            ["Ion current Iis (at Vf)", `${fmtE(r.Iis_A, 5)} A`],
             ["Electron saturation current Ies", `${fmtE(r.Ies_A, 5)} A`],
             ["Electron density ne", `${fmtE(r.ne_m3, 5)} m⁻³`],
             ["Ion fit Iion² slope a", `${fmtE(r.ion_i2_a)} A²/V`],
@@ -431,13 +438,14 @@
       }
       out.push("");
       out.push(csvRow(["IV curve"]));
-      out.push(csvRow([xkey, "I_mean_A", "I_std_A", ...state.scans.map((s) => `scan_${s.id}_I_A`)]));
+      out.push(csvRow([xkey, "I_mean_A", "I_std_A", ...state.scans.map((s) => `${s.label.replace(/\s+/g, "_")}_I_A`)]));
       for (let n = 0; n < x.length; n++) out.push(csvRow([x[n], imean[n], istd[n], ...currents.map((c) => c[n])]));
       out.push("");
       out.push(csvRow(["EEDF / EEPF"]));
       if (state.lastEEPF) {
         const e = state.lastEEPF;
-        out.push(csvRow(["E_eV", "EEDF_raw", "EEDF_smooth", "EEPF_raw", "EEPF_smooth"]));
+        out.push(csvRow(["n from EEDF (m^-3)", e.n_EEDF_m3]));
+        out.push(csvRow(["E_eV", "EEDF_raw_m-3_eV-1", "EEDF_smooth_m-3_eV-1", "EEPF_raw_m-3_eV-3/2", "EEPF_smooth_m-3_eV-3/2"]));
         for (let n = 0; n < e.E_eV.length; n++) out.push(csvRow([e.E_eV[n], e.EEDF[n], e.EEDF_smooth[n], e.EEPF[n], e.EEPF_smooth[n]]));
       } else {
         out.push(csvRow(["No EEDF / EEPF data available. Run OML then EEPF first."]));
@@ -542,7 +550,12 @@
     for (const id of ["skipStart", "skipEnd", "cropFrom", "cropTo"]) $(id).addEventListener("change", () => applyCrop());
     $("cropReset").addEventListener("click", () => { resetCropRange(); applyCrop(); });
     for (const id of ["diameter", "length", "ionFraction", "smoothWindow"]) {
-      $(id).addEventListener("change", () => { try { numberValue(id); saveSettings(); } catch (_) { /* flagged red */ } });
+      $(id).addEventListener("change", () => {
+        if (id === "smoothWindow" && Number.isFinite(parseFloat($(id).value))) {
+          $(id).value = Math.min(501, N.makeOdd(parseFloat($(id).value)));  // the window actually used
+        }
+        try { numberValue(id); saveSettings(); } catch (_) { /* flagged red */ }
+      });
     }
 
     // export dropdown

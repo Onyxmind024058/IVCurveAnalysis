@@ -233,12 +233,62 @@
   // Data helpers
   // ---------------------------------------------------------------------------
 
+  /** Sort by x and average points that share the same x (np.interp needs unique, increasing xp). */
+  function uniqueSorted(x, y) {
+    const order = argsort(x);
+    const xs = [], ys = [];
+    let k = 0;
+    while (k < order.length) {
+      const xv = x[order[k]];
+      let s = 0, n = 0;
+      while (k < order.length && x[order[k]] === xv) { s += y[order[k]]; n++; k++; }
+      if (Number.isFinite(xv) && Number.isFinite(s)) { xs.push(xv); ys.push(s / n); }
+    }
+    return { x: Float64Array.from(xs), y: Float64Array.from(ys) };
+  }
+
+  /**
+   * A scan recorded as a triangular sweep (up then down, or down then up)
+   * is split into its two branches so they are not mixed point-by-point.
+   * Only one clear turning point is handled; noisy voltage read-back is
+   * not mistaken for a turn because both branches must span >= 50 % of
+   * the range and hold >= 20 % of the points.
+   */
+  function splitSweeps(scans, xkey) {
+    const out = [];
+    for (const s of scans) {
+      const x = s[xkey], n = x.length;
+      const label = s.label || `scan ${s.id}`;
+      const lo = min(x), hi = max(x), span = hi - lo;
+      let turn = -1;
+      for (const k of [argmax(x), argmax(x.map((v) => -v))]) {
+        const a = x.slice(0, k + 1), b = x.slice(k);
+        const ok = k >= 0.2 * n && k <= 0.8 * n
+          && max(a) - min(a) >= 0.5 * span && max(b) - min(b) >= 0.5 * span;
+        if (ok) { turn = k; break; }
+      }
+      if (turn < 0) { out.push({ ...s, label }); continue; }
+      const part = (a, b) => ({ VData: s.VData.slice(a, b), RefData: s.RefData.slice(a, b), IData: s.IData.slice(a, b) });
+      const dir = (seg) => (seg[seg.length - 1] > seg[0] ? "up" : "down");
+      out.push({ ...s, ...part(0, turn + 1), label: `${label} ${dir(x.slice(0, turn + 1))}` });
+      out.push({ ...s, ...part(turn, n), label: `${label} ${dir(x.slice(turn))}` });
+    }
+    return out;
+  }
+
+  /**
+   * Average scans on a common, evenly spaced grid covering the voltage range
+   * shared by all scans (no extrapolation; smoothing and derivatives assume
+   * even spacing).
+   */
   function averageScans(scans, xkey) {
-    const xgrid = toF64(scans[0][xkey]);
-    const currents = scans.map((s) => {
-      const order = argsort(s[xkey]);
-      return interp(xgrid, take(s[xkey], order), take(s.IData, order));
-    });
+    const curves = scans.map((s) => uniqueSorted(s[xkey], s.IData));
+    const lo = Math.max(...curves.map((c) => c.x[0]));
+    const hi = Math.min(...curves.map((c) => c.x[c.x.length - 1]));
+    if (!(hi > lo)) throw new Error("The scans do not share a common voltage range.");
+    const npts = Math.max(10, ...curves.map((c) => c.x.length));
+    const xgrid = linspace(lo, hi, npts);
+    const currents = curves.map((c) => interp(xgrid, c.x, c.y));
     const n = xgrid.length, m = currents.length;
     const imean = new Float64Array(n), istd = new Float64Array(n);
     for (let k = 0; k < n; k++) {
@@ -279,6 +329,12 @@
   function sortedCurve(V, I) {
     const order = argsort(V);
     return { V: take(V, order), I: take(I, order) };
+  }
+
+  /** Ion current from the I_i^2 = aV + b fit, evaluated at V (used at Vf for Iis). */
+  function ionCurrentAt(V, a, b, signI) {
+    if (!Number.isFinite(V)) return NaN;
+    return signI * Math.sqrt(Math.max(a * V + b, 0));
   }
 
   // ---------------------------------------------------------------------------
@@ -324,14 +380,28 @@
     return {
       method: "Automatic OML",
       Vf: vf, Vp: vp, Te_eV: teEV, Ies_A: ies, ne_m3: ne,
-      ion_i2_a: a, ion_i2_b: b,
+      Iis_A: ionCurrentAt(vf, a, b, signI),
+      ion_i2_a: a, ion_i2_b: b, ion_sign: signI,
       x, I_raw: i, I_smooth: ismooth, Iion: iIon, Ie: ie,
     };
   }
 
   // ---------------------------------------------------------------------------
-  // EEPF / EEDF (Druyvesteyn) — same formula and labels as main.py
+  // EEPF / EEDF (Druyvesteyn)
+  //
+  //   EEPF  g_p(eps) = 2*sqrt(2*m_e) / (e^3 * A) * d2Ie/dV2      [m^-3 J^-3/2]
+  //   EEDF  g_e(eps) = g_p(eps) * sqrt(eps)                       [m^-3 J^-1]
+  //   with eps = e * (Vp - V) and  n = integral g_e d(eps).
+  //
+  // Results are returned per eV (m^-3 eV^-3/2 and m^-3 eV^-1), the usual
+  // plasma convention:  per eV = per J * e^(3/2)  (EEPF),  * e  (EEDF).
   // ---------------------------------------------------------------------------
+
+  function trapz(y, x) {
+    let s = 0;
+    for (let k = 1; k < x.length; k++) s += 0.5 * (y[k] + y[k - 1]) * (x[k] - x[k - 1]);
+    return s;
+  }
 
   function computeEEPF(Vin, Iin, probeArea, oml, smoothWindow = 21, eMinEV = 0, distSmoothWindow = 9) {
     const { V, I } = sortedCurve(Vin, Iin);
@@ -348,7 +418,8 @@
       if (oml.Iion && oml.x) {
         Iion = interp(V, oml.x, oml.Iion);
       } else if (Number.isFinite(oml.ion_i2_a) && Number.isFinite(oml.ion_i2_b)) {
-        Iion = Float64Array.from(V, (v) => -Math.sqrt(Math.max(oml.ion_i2_a * v + oml.ion_i2_b, 0)));
+        const signI = Number.isFinite(oml.ion_sign) && oml.ion_sign !== 0 ? oml.ion_sign : -1;
+        Iion = Float64Array.from(V, (v) => ionCurrentAt(v, oml.ion_i2_a, oml.ion_i2_b, signI));
       } else {
         throw new Error("Ion-current fit is missing. Run automatic or manual OML first.");
       }
@@ -360,25 +431,29 @@
     const d2 = gradient(d1, V);
 
     const k = (2 * Math.sqrt(2 * M_E)) / (E_CHARGE ** 3 * probeArea);
+    const toEEPFperEV = E_CHARGE ** 1.5, toEEDFperEV = E_CHARGE;
     const rows = [];
     for (let j = 0; j < V.length; j++) {
-      const E = Vp - V[j];
-      const eedf = Math.max(k * d2[j], 0);
-      const eepf = Math.max(eedf / Math.sqrt(Math.max(E, Number.EPSILON)), 0);
-      if (Number.isFinite(E) && Number.isFinite(eedf) && Number.isFinite(eepf) && E >= eMinEV) {
-        rows.push([E, eedf, eepf]);
-      }
+      const E = Vp - V[j];                       // energy in eV
+      if (!Number.isFinite(E) || E < eMinEV || E < 0) continue;
+      const eepfJ = k * d2[j];                   // m^-3 J^-3/2
+      const eedfJ = eepfJ * Math.sqrt(E * E_CHARGE);  // m^-3 J^-1
+      if (Number.isFinite(eepfJ)) rows.push([E, eedfJ * toEEDFperEV, eepfJ * toEEPFperEV]);
     }
     rows.sort((p, q) => p[0] - q[0]);
     const E = Float64Array.from(rows, (r) => r[0]);
     const EEDF = Float64Array.from(rows, (r) => r[1]);
     const EEPF = Float64Array.from(rows, (r) => r[2]);
-    const clip0 = (a) => a.map((v) => Math.max(v, 0));
+    // smooth first, then drop the non-physical negative part
+    const smoothClip = (a) => (a.length ? movingAverage(a, distSmoothWindow).map((v) => Math.max(v, 0)) : a);
+    const EEDF_smooth = smoothClip(EEDF), EEPF_smooth = smoothClip(EEPF);
+
+    // density from the smoothed EEDF (consistency check against OML ne)
+    const nEEDF = trapz(EEDF_smooth, E);
 
     return {
-      E_eV: E, EEDF, EEPF,
-      EEDF_smooth: clip0(rows.length ? movingAverage(EEDF, distSmoothWindow) : EEDF),
-      EEPF_smooth: clip0(rows.length ? movingAverage(EEPF, distSmoothWindow) : EEPF),
+      E_eV: E, EEDF, EEPF, EEDF_smooth, EEPF_smooth,
+      n_EEDF_m3: nEEDF,
       V, I, Ie, Ie_smooth: IeSmooth, d2Ie_dV2: d2, Vp,
     };
   }
@@ -397,7 +472,7 @@
       // np.digitize(V, bins) - 1  ==  (number of bin edges <= v) - 1
       let lo = 0, hi = bins.length;
       while (lo < hi) { const mid = (lo + hi) >> 1; if (bins[mid] <= V[j]) lo = mid + 1; else hi = mid; }
-      const k = lo - 1;
+      const k = Math.min(lo - 1, npt - 1);  // the last edge (v == vmax) belongs to the last bin
       if (k >= 0 && k < npt && !Number.isNaN(I[j])) { sums[k] += I[j]; counts[k]++; }
     }
     const outV = [], outI = [];
@@ -407,10 +482,14 @@
     return { V: Float64Array.from(outV), I: Float64Array.from(outI) };
   }
 
+  /**
+   * J = e*sqrt(e/me)*sqrt(Te)*ne*exp(-1/2) * (exp((V-Vp)/Te) - exp((Vf-Vp)/Te))
+   * Written relative to Vp so the exponentials cannot overflow.
+   */
   function epflModel(v, ne, Te, Vp, Vf) {
     Te = Math.max(Te, 1e-6);
-    return E_CHARGE * Math.sqrt(E_CHARGE / M_E) * Math.sqrt(Te) * ne
-      * Math.exp(-0.5 - Vp / Te) * (Math.exp(v / Te) - Math.exp(Vf / Te));
+    return E_CHARGE * Math.sqrt(E_CHARGE / M_E) * Math.sqrt(Te) * ne * Math.exp(-0.5)
+      * (Math.exp((v - Vp) / Te) - Math.exp((Vf - Vp) / Te));
   }
 
   /** Solve a small dense linear system (Gaussian elimination, partial pivot). */
@@ -509,18 +588,17 @@
     const vlo = min(V) - 100, vhi = max(V) + 100;
     let ne, Te, Vp, Vf;
 
-    if (fitMode === "all") {
-      [ne, Te, Vp, Vf] = curveFit(epflModel, V, J,
-        [Math.max(ne0, 1e12), Math.max(Te0, 0.05), Vp0, Vf0],
-        [0, 1e-4, vlo, vlo], [Infinity, Infinity, vhi, vhi]);
-    } else if (fitMode === "Vp, ne") {
-      [ne, Vp] = curveFit((v, n_, vp) => epflModel(v, n_, Te0, vp, Vf0), V, J,
-        [Math.max(ne0, 1e12), Vp0], [0, vlo], [Infinity, vhi]);
-      Te = Te0; Vf = Vf0;
+    // ne and Vp only enter the model as ne*exp(-Vp/Te), so they cannot be
+    // fitted together: Vp always stays at the value given (dI/dV / transition).
+    Vp = Vp0;
+    if (fitMode === "ne, Te, Vf") {
+      [ne, Te, Vf] = curveFit((v, n_, te, vf) => epflModel(v, n_, te, Vp0, vf), V, J,
+        [Math.max(ne0, 1e12), Math.max(Te0, 0.05), Vf0],
+        [0, 1e-4, vlo], [Infinity, Infinity, vhi]);
     } else {
       [ne] = curveFit((v, n_) => epflModel(v, n_, Te0, Vp0, Vf0), V, J,
         [Math.max(ne0, 1e12)], [0], [Infinity]);
-      Te = Te0; Vp = Vp0; Vf = Vf0;
+      Te = Te0; Vf = Vf0;
     }
     const Vfit = Float64Array.from(V);
     return {
@@ -560,7 +638,7 @@
     linspace, interp, gradient, polyfit, polyval, lstsq,
     makeOdd, movingAverage, polynomialSmooth, smoothSignal,
     averageScans, finiteCrossingX, fitLineRegion, sortedCurve,
-    analyseOML, computeEEPF, rebinCurve, epflModel, curveFit, fitEPFLTwoFluid,
+    analyseOML, ionCurrentAt, computeEEPF, trapz, uniqueSorted, splitSweeps, rebinCurve, epflModel, curveFit, fitEPFLTwoFluid,
     normalizeVersion, parseVersionTuple, isNewerVersion,
   };
 

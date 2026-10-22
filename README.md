@@ -9,13 +9,21 @@ Or compile this code using pyinstaller:
 ```bash
 pyinstaller --onefile --windowed --name Langmuir_Probe_IV_Analyser_UB --icon=icon.ico --add-data "splash.png;." --add-data "icon.ico;." main.py
 ```
-### Browser version (no installation)
+### Browser version (no installation) — recommended
+
+> The Python/PySide6 desktop application (`main.py`) is **no longer maintained**. New features and fixes go into the browser version only.
+
 
 The `web/` folder contains a browser edition of the same analyser, in the spirit of ImageJ.js:
 
 - **Run it:** open `web/index.html` in any modern browser (double-click it). No Python, no install, no internet required, as all libraries are bundled.
 - **Private:** `.lda` files are read locally by the browser and never uploaded.
-- **Same maths:** `web/js/numerics.js` is a line-by-line port of the analysis functions in `main.py`, and gives the same Vf, Vp, Te, Ies, ne and EEDF/EEPF values as the Python app.
+- **Analysis core:** `web/js/numerics.js`, started as a port of `main.py`, with these corrections (v2.0.0):
+  - EEDF and EEPF were swapped. The Druyvesteyn expression `2·sqrt(2·mₑ)/(e³·A) · d²Iₑ/dV²` is the EEPF; EEDF = EEPF·sqrt(ε). Both are shown per eV (m⁻³ eV⁻¹, m⁻³ eV⁻³ᐟ²), and the EEPF window shows the density ∫EEDF dε next to the OML ne as a check.
+  - Iis is the ion current from the I² fit evaluated at **Vf** (it was evaluated at 0 V).
+  - EPFL two-fluid: ne and Vp only appear in the model as ne·exp(−Vp/Te), so they cannot be fitted together. The modes are now "ne" and "ne, Te, Vf", with Vp from the dI/dV peak. The model is written relative to Vp so it cannot overflow.
+  - Scans are averaged on an evenly spaced grid over their common voltage range; up/down (triangular) sweeps are split into separate branches.
+  - Other fixes: EEPF uses the fitted ion-current sign, EEDF is smoothed before clipping negatives, rebinning keeps the last point, smoothing windows are always odd, and corrupt `.lda` files give a clear error.
 - **Data files:** opens `.lda` files and CSV/text files. The CSV importer detects the separator (comma, semicolon, tab or spaces) and decimal commas, skips header/metadata lines, and lets you pick the voltage column, the current column(s) (one scan each) and the current unit (A, mA, µA, nA), with a live preview. Files exported by this app can be opened again.
 - **Data range:** in the *Data range* panel, the curve can be reduced before any analysis: skip the first/last N points of every sweep (e.g. start-up transients) and/or keep only a voltage window, set by typing or by dragging the lines on the main plot. All analyses and exports use the reduced curve.
 - **Theme:** University of Basel light/dark theme (switch in the top-right corner).

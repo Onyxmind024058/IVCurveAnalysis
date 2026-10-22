@@ -16,7 +16,7 @@
       Ismooth: Float64Array.from(cur), dIdV: null, dIdVsmooth: null,
       Vf: N.finiteCrossingX(v, cur), Vp1: NaN, Vp2: NaN, Vp: NaN,
       Te_eV: NaN, ne_m3: NaN, Iis_A: NaN, Ies_A: NaN,
-      ionCoeff: null, Iion: null, Ie: null, transCoeff: null, satCoeff: null,
+      ionCoeff: null, ionSign: -1, Iion: null, Ie: null, transCoeff: null, satCoeff: null,
     };
 
     const d = IV.ui.openDialog({ title: `Manual OML analysis — ${label}` });
@@ -56,8 +56,10 @@
     // ----- Tab 1: smooth IV --------------------------------------------------
     const t1 = plotPanel(tabs.panels[0], "smooth_iv");
     const smoothMethod = selectField("Smooth method:", SMOOTH_METHODS, { onChange: updateSmoothIV });
-    const winMax = Math.max(5, Math.min(n, 501));
-    const smoothWindow = sliderField("Window:", { value: Math.min(21, Math.max(3, Math.floor(n / 10))), min: 3, max: winMax, onChange: updateSmoothIV });
+    const winCap = Math.max(5, Math.min(n, 501));
+    const winMax = winCap % 2 ? winCap : winCap - 1;  // odd, like every smoothing window
+    const startWin = N.makeOdd(Math.min(21, Math.max(3, Math.floor(n / 10))));
+    const smoothWindow = sliderField("Window:", { value: startWin, min: 3, max: winMax, step: 2, onChange: updateSmoothIV });
     const smoothOrder = numberField("Poly order:", { value: 2, step: 1, min: 1, max: 7, decimals: 0, width: "64px", onChange: updateSmoothIV });
     const analysable = checkField("Analysable", { checked: true });
     t1.controls.append(smoothMethod.field, smoothWindow.field, smoothOrder.field, analysable.field, nextBtn("Next", nextFromSmooth));
@@ -122,7 +124,8 @@
         const coeff = N.polyfit(xs, ys, 1);
         s.ionCoeff = coeff;
         s.Iion = Float64Array.from(v, (x) => signI * Math.sqrt(Math.max(N.polyval(coeff, x), 0)));
-        s.Iis_A = signI * Math.sqrt(Math.max(N.polyval(coeff, 0), 0));
+        s.ionSign = signI;
+        s.Iis_A = N.ionCurrentAt(s.Vf, coeff[0], coeff[1], signI);  // ion current at Vf
       } catch (_) {
         s.ionCoeff = null;
         s.Iion = new Float64Array(n).fill(NaN);
@@ -164,7 +167,7 @@
     // ----- Tab 3: dI/dV smoothing --------------------------------------------
     const t3 = plotPanel(tabs.panels[2], "didv_smooth");
     const dMethod = selectField("dI/dV smooth method:", SMOOTH_METHODS, { onChange: updateDidvSmooth });
-    const dWindow = sliderField("Window:", { value: Math.min(21, Math.max(3, Math.floor(n / 10))), min: 3, max: winMax, onChange: updateDidvSmooth });
+    const dWindow = sliderField("Window:", { value: startWin, min: 3, max: winMax, step: 2, onChange: updateDidvSmooth });
     const dOrder = numberField("Poly order:", { value: 2, step: 1, min: 1, max: 7, decimals: 0, width: "64px", onChange: updateDidvSmooth });
     t3.controls.append(dMethod.field, dWindow.field, dOrder.field, nextBtn("Next", nextFromDidvSmooth));
 
@@ -313,7 +316,7 @@
     }
 
     // ----- Tab 6: results ----------------------------------------------------
-    const cols = ["Vp", "Vf", "Te_eV", "ne_m^-3", "Iis_A", "Ies_A"];
+    const cols = ["Vp", "Vf", "Te_eV", "ne_m^-3", "Iis_A (at Vf)", "Ies_A"];
     const tbody = el("tbody");
     const table = el("table.data", {}, [el("thead", {}, [el("tr", {}, cols.map((c) => el("th", { text: c })))]), tbody]);
     tabs.panels[5].append(
@@ -331,6 +334,8 @@
         Vp: s.Vp, Vf: s.Vf, Te_eV: s.Te_eV, ne_m3: s.ne_m3, Iis_A: s.Iis_A, Ies_A: s.Ies_A,
         ion_i2_a: s.ionCoeff ? s.ionCoeff[0] : NaN,
         ion_i2_b: s.ionCoeff ? s.ionCoeff[1] : NaN,
+        ion_sign: s.ionSign,
+        x: v, Iion: s.ionCoeff ? s.Iion : undefined,  // fitted ion current, reused by EEPF
         Vp_dIdV: s.Vp1, Vp_intersection: s.Vp2,
       });
       d.close();

@@ -21,12 +21,13 @@
     const d = IV.ui.openDialog({ title });
     const recalc = () => recalculateAll();
 
-    const smooth = numberField("Smooth window:", { value: 10, step: 1, min: 1, max: 501, decimals: 0, width: "80px", onChange: recalc });
+    const smooth = numberField("Smooth window:", { value: 11, step: 2, min: 3, max: 501, decimals: 0, width: "80px", odd: true, onChange: recalc });
     const vpSpin = numberField("Vp:", { value: 0, step: 0.1, min: vMin - 100, max: vMax + 100, decimals: 2, width: "100px", onChange: recalc });
     const halfPts = numberField("Transition fit half-width points:", { value: 5, step: 1, min: 2, max: 500, decimals: 0, width: "80px", onChange: recalc });
     const vaSpin = numberField("Va upper limit for Te fit:", { value: 0, step: 0.1, min: vMin - 1000, max: vMax + 1000, decimals: 4, width: "110px", onChange: recalc });
     const offset = numberField("Log offset factor:", { value: 1, step: 0.1, min: 0, max: 1e6, decimals: 4, width: "90px", onChange: recalc });
-    const fitMode = selectField("Exponential fitting:", ["ne", "Vp, ne", "all"], { onChange: recalc });
+    const fitMode = selectField("Exponential fitting:", ["ne", "ne, Te, Vf"], { onChange: recalc });
+    fitMode.field.title = "Vp is not fitted: in the model ne and Vp only appear as ne·exp(−Vp/Te), so they cannot be separated. Vp comes from the dI/dV peak (draggable).";
     const errorLine = el("span.hint", { style: "color:var(--red)" });
 
     d.body.append(el("div.controls", { style: "border-top:none;border-bottom:1px solid var(--border)" },
