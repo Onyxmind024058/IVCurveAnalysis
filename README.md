@@ -9,6 +9,16 @@ Or compile this code using pyinstaller:
 ```bash
 pyinstaller --onefile --windowed --name Langmuir_Probe_IV_Analyser_UB --icon=icon.ico --add-data "splash.png;." --add-data "icon.ico;." main.py
 ```
+### Browser version (no installation)
+
+The `web/` folder contains a browser edition of the same analyser, in the spirit of ImageJ.js:
+
+- **Run it:** open `web/index.html` in any modern browser (double-click it). No Python, no install, no internet required, as all libraries are bundled.
+- **Private:** `.lda` files are read locally by the browser and never uploaded.
+- **Same maths:** `web/js/numerics.js` is a line-by-line port of the analysis functions in `main.py`, and gives the same Vf, Vp, Te, Ies, ne and EEDF/EEPF values as the Python app.
+- **Theme:** University of Basel light/dark theme (switch in the top-right corner).
+- **Host it (optional):** the folder is static, so it can also be served from GitHub Pages or any web server.
+
 ---
 
 ## 1. Main Features
