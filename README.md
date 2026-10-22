@@ -22,6 +22,8 @@ The app lives in the `web/` folder and runs entirely in the browser, in the spir
 - **Data range:** in the *Data range* panel, the curve can be reduced before any analysis: skip the first/last N points of every sweep (e.g. start-up transients) and/or keep only a voltage window, set by typing or by dragging the lines on the main plot. All analyses and exports use the reduced curve.
 - **Theme:** University of Basel light/dark theme (switch in the top-right corner).
 - **Host it:** the folder is static, so it can be served from GitHub Pages or any web server.
+- **Ion density:** nᵢ is calculated from the slope of the I² fit (OML theory for a cylindrical probe, nᵢ = (π/(A·e))·√(mᵢ·|a|/(2e))) for the ion species chosen in *Probe / OML settings*, and shown with nᵢ/nₑ.
+- **Saved analyses:** *Save / Export → Save analysis* (Ctrl+S) writes one `.ivsession` file with the data, settings, data range, fit regions of every window and the results. Opening it (like a data file) restores everything; the Manual OML window reopens on the step where you stopped.
 - **Install / offline:** from the GitHub Pages site the analyser can be installed as an app (Chrome/Edge: *Install app* button or the icon in the address bar; Safari: Share → *Add to Dock* / *Add to Home Screen*). It then has its own icon and window and works without internet. When online, the latest version is loaded automatically. In Chrome/Edge the installed app can also open `.lda`/`.csv` files via *Open with*. (Opening `web/index.html` from disk works as before, but cannot be installed.)
 - **What's new:** the *What's new* button lists the changes of each version; it opens by itself once after an update.
 

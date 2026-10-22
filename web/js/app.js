@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.1.0";
+  const APP_VERSION = "2.2.0";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -23,13 +23,15 @@
     omlResults: null,      // latest automatic or manual OML result (feeds EEPF)
     lastResults: null,     // latest result of any method (exported)
     lastEEPF: null,
+    params: {},            // last settings of each analysis window: {manual, eepf, epfl}
+    cards: [],             // results cards shown for the current data (saved with a session)
   };
 
   // ---------------------------------------------------------------------------
   // Settings (per-browser convenience only)
   // ---------------------------------------------------------------------------
 
-  const settingInputs = ["diameter", "length", "ionFraction", "smoothWindow", "xaxis"];
+  const settingInputs = ["diameter", "length", "ionFraction", "smoothWindow", "xaxis", "ionGas", "ionMass"];
 
   function loadSettings() {
     try {
@@ -56,6 +58,35 @@
     if (!ok) throw new Error(`Invalid value for ${node.dataset.label || id}.`);
     return v;
   };
+
+  // ---------------------------------------------------------------------------
+  // Ion species (for the ion density from the OML ion current)
+  // ---------------------------------------------------------------------------
+
+  function fillIonSpecies() {
+    const sel = $("ionGas");
+    for (const name of [...Object.keys(N.ION_SPECIES), "Custom"]) sel.append(el("option", { value: name, text: name }));
+    sel.value = "Ar⁺";
+  }
+
+  function syncIonMass() {
+    const custom = $("ionGas").value === "Custom";
+    $("ionMass").disabled = !custom;
+    if (!custom) $("ionMass").value = N.ION_SPECIES[$("ionGas").value];
+  }
+
+  /** Adds n_i (from the slope of the I^2 fit) to an OML result. */
+  function addIonDensity(r, area) {
+    r.ion_species = $("ionGas").value;
+    r.ion_mass_amu = numberValue("ionMass");
+    r.ni_m3 = N.ionDensityOML(r.ion_i2_a, area, r.ion_mass_amu);
+    return r;
+  }
+
+  const ionRows = (r) => [
+    [`Ion density ni (OML, ${r.ion_species})`, `${fmtE(r.ni_m3, 5)} m⁻³`],
+    ["Ratio ni / ne", fmtG(r.ni_m3 / r.ne_m3, 3)],
+  ];
 
   function probeArea() {
     // Cylindrical probe side area: A = pi d L
@@ -92,9 +123,10 @@
     $("log").scrollTop = $("log").scrollHeight;
   }
 
-  function resultCard(title, rows, note) {
+  function resultCard(title, rows, note, time) {
     $("log").querySelector(".empty-state")?.remove();
-    const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    time = time || new Date().toLocaleString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    state.cards.push({ title, rows, note, time });
     const dl = el("dl");
     for (const [k, v] of rows) dl.append(el("dt", { text: k }), el("dd", { text: v }));
     const card = el("section.result-card", {}, [
@@ -118,6 +150,8 @@
     state.fileName = name;
     // new data invalidates every earlier analysis
     state.omlResults = state.lastResults = state.lastEEPF = null;
+    state.params = {};
+    state.cards = [];
     $("cropEnable").checked = false;
     resetCropRange();
     applyCrop(false);
@@ -136,8 +170,11 @@
   async function openFile(file) {
     try {
       const text = await file.text();
-      const looksXML = /^\s*</.test(text.replace(/^﻿/, ""));
-      if (/\.(lda|xml)$/i.test(file.name) || looksXML) {
+      const clean = text.replace(/^\uFEFF/, "");
+      const looksXML = /^\s*</.test(clean);
+      if (/\.ivsession$/i.test(file.name) || /^\s*\{/.test(clean)) {
+        loadSession(JSON.parse(clean), file.name);
+      } else if (/\.(lda|xml)$/i.test(file.name) || looksXML) {
         setScans(IV.lda.parseLDA(text), file.name);
       } else {
         const scans = await IV.csv.importCSV(text, file.name);
@@ -288,7 +325,7 @@
     try {
       const { xkey, x, imean } = meanCurve();
       const area = probeArea();
-      const r = N.analyseOML(x, imean, area, numberValue("ionFraction"), numberValue("smoothWindow"));
+      const r = addIonDensity(N.analyseOML(x, imean, area, numberValue("ionFraction"), numberValue("smoothWindow")), area);
       setOmlResults(r);
       resultCard("Automatic OML-style analysis", [
         ["X axis used", xkey],
@@ -299,6 +336,7 @@
         ["Electron saturation current Ies", `${fmtE(r.Ies_A, 5)} A`],
         ["Electron density ne", `${fmtE(r.ne_m3, 5)} m⁻³`],
         ["Ion current Iis (at Vf)", `${fmtE(r.Iis_A, 5)} A`],
+        ...ionRows(r),
         ["Ion fit Iion² slope a", `${fmtE(r.ion_i2_a)} A²/V`],
         ["Ion fit Iion² offset b", `${fmtE(r.ion_i2_b)} A²`],
       ], "Ion current fit: Iion² = a·V + b. First-pass estimate; use manual mode to check fit regions.");
@@ -318,9 +356,13 @@
     if (!needData()) return;
     try {
       const { xkey, x, imean } = meanCurve();
+      const area = probeArea();
       IV.openManualOML({
-        V: x, I: imean, probeArea: probeArea(), label: `Manual OML on averaged I-V (${xkey})`,
+        V: x, I: imean, probeArea: area, label: `Manual OML on averaged I-V (${xkey})`,
+        params: state.params.manual,
         onResults(r) {
+          state.params.manual = r.params;
+          addIonDensity(r, area);
           setOmlResults(r);
           resultCard("Manual OML analysis", [
             ["Floating potential Vf", fmtG(r.Vf, 5)],
@@ -329,6 +371,7 @@
             ["Final plasma potential Vp", fmtG(r.Vp, 5)],
             ["Electron temperature Te", `${fmtG(r.Te_eV, 5)} eV`],
             ["Ion current Iis (at Vf)", `${fmtE(r.Iis_A, 5)} A`],
+            ...ionRows(r),
             ["Electron saturation current Ies", `${fmtE(r.Ies_A, 5)} A`],
             ["Electron density ne", `${fmtE(r.ne_m3, 5)} m⁻³`],
             ["Ion fit Iion² slope a", `${fmtE(r.ion_i2_a)} A²/V`],
@@ -353,7 +396,11 @@
       IV.openEEPF({
         V: x, I: imean, probeArea: probeArea(), oml: state.omlResults,
         title: `EEPF / EEDF from ${xkey} curve`,
-        onData(data) { if (data) state.lastEEPF = data; },
+        params: state.params.eepf,
+        onData(data, params) {
+          if (data) state.lastEEPF = data;
+          state.params.eepf = params;
+        },
       });
     } catch (e) {
       IV.ui.message("EEPF/EEDF failed", IV.escape(e.message));
@@ -366,7 +413,9 @@
       const { xkey, x, imean } = meanCurve();
       IV.openEPFL({
         V: x, I: imean, probeArea: probeArea(), title: `EPFL two-fluid model from ${xkey} curve`,
+        params: state.params.epfl,
         onResults(r) {
+          state.params.epfl = r.params;
           state.lastResults = r;
           resultCard("EPFL two-fluid model", [
             ["Fit mode", r.fit_mode],
@@ -381,6 +430,96 @@
     } catch (e) {
       IV.ui.message("EPFL two-fluid model failed", IV.escape(e.message));
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Saved analysis (.ivsession): data + settings + results in one JSON file
+  // ---------------------------------------------------------------------------
+
+  const SESSION_FORMAT = "ivcurve-session";
+  const SESSION_VERSION = 1;
+
+  /** JSON-safe copy: typed arrays -> arrays, NaN/Infinity -> null. */
+  function plain(value) {
+    if (value === null || value === undefined) return null;
+    if (ArrayBuffer.isView(value)) return Array.from(value, (v) => (Number.isFinite(v) ? v : null));
+    if (Array.isArray(value)) return value.map(plain);
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, plain(v)]));
+    return value;
+  }
+
+  /** Inverse of plain(): numeric arrays -> Float64Array, null -> NaN. */
+  function revive(value) {
+    if (Array.isArray(value)) {
+      const numeric = value.length > 0 && value.every((v) => v === null || typeof v === "number");
+      return numeric ? Float64Array.from(value, (v) => (v === null ? NaN : v)) : value.map(revive);
+    }
+    if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, revive(v)]));
+    return value === null ? NaN : value;
+  }
+
+  function saveSession() {
+    if (!needData()) return;
+    const settings = { showAll: $("showAll").checked, showMean: $("showMean").checked };
+    for (const id of settingInputs) settings[id] = $(id).value;
+    const session = {
+      format: SESSION_FORMAT,
+      format_version: SESSION_VERSION,
+      app_version: APP_VERSION,
+      saved_at: new Date().toISOString(),
+      file_name: state.fileName,
+      scans: state.rawScans.map((s) => plain({ id: s.id, label: s.label ?? null, VData: s.VData, RefData: s.RefData, IData: s.IData })),
+      settings,
+      crop: plain(state.crop),
+      params: plain(state.params),
+      oml_results: plain(state.omlResults),
+      last_results: state.lastResults && state.lastResults === state.omlResults ? "oml" : plain(state.lastResults),
+      cards: state.cards,
+    };
+    const name = `${baseName()}.ivsession`;
+    IV.ui.download(name, JSON.stringify(session), "application/json");
+    log(`Saved analysis: ${name}`);
+    status(`Analysis saved as ${name}`);
+  }
+
+  function loadSession(session, fileName) {
+    if (!session || session.format !== SESSION_FORMAT) throw new Error("This JSON file is not a saved IV analysis (.ivsession).");
+    if (session.format_version > SESSION_VERSION) throw new Error("This analysis was saved by a newer version of the app.");
+    const scans = session.scans.map((s) => {
+      const r = revive(s);
+      if (typeof r.label !== "string") delete r.label;
+      return r;
+    });
+
+    $("log").replaceChildren();
+    for (const [id, v] of Object.entries(session.settings || {})) {
+      if (id === "showAll" || id === "showMean") $(id).checked = v;
+      else if ($(id)) $(id).value = v;
+    }
+    syncIonMass();
+    setScans(scans, session.file_name || fileName);
+
+    const c = session.crop || {};
+    if (c.enabled) {
+      $("cropEnable").checked = true;
+      $("skipStart").value = c.skipStart ?? 0;
+      $("skipEnd").value = c.skipEnd ?? 0;
+      if (c.from !== null && c.from !== undefined) $("cropFrom").value = c.from;
+      if (c.to !== null && c.to !== undefined) $("cropTo").value = c.to;
+    }
+    applyCrop(false);
+    plotData();
+
+    state.params = revive(session.params || {});
+    state.omlResults = session.oml_results ? revive(session.oml_results) : null;
+    state.lastResults = session.last_results === "oml" ? state.omlResults
+      : (session.last_results ? revive(session.last_results) : null);
+    for (const card of session.cards || []) resultCard(card.title, card.rows, card.note, card.time);
+
+    log(`Opened saved analysis ${fileName} (saved ${new Date(session.saved_at).toLocaleString()} with app v${session.app_version}).`);
+    status(`Saved analysis restored — ${scans.length} scan${scans.length === 1 ? "" : "s"}`);
+    saveSettings();
   }
 
   // ---------------------------------------------------------------------------
@@ -413,7 +552,10 @@
       const { xkey, x, imean, istd, currents } = meanCurve();
       const area = probeArea();
       if (!state.lastEEPF && state.omlResults) {
-        state.lastEEPF = N.computeEEPF(x, imean, area, state.omlResults, numberValue("smoothWindow"), 0, 9);
+        const p = state.params.eepf;  // same settings as last used in the EEPF window
+        state.lastEEPF = p
+          ? N.computeEEPF(x, imean, area, state.omlResults, p.d2Smooth, p.eMin, p.distSmooth)
+          : N.computeEEPF(x, imean, area, state.omlResults, numberValue("smoothWindow"), 0, 9);
       }
       const out = [];
       out.push(csvRow(["Langmuir probe full export"]));
@@ -463,6 +605,15 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.2.0",
+      title: "Ion density and saved analyses",
+      items: [
+        "Ion density nᵢ from the slope of the ion-current fit (OML, cylindrical probe), with the ratio nᵢ/nₑ. Choose the ion species (Ar⁺, He⁺, H₂⁺, …) or a custom mass in Probe / OML settings.",
+        "Save analysis (Save / Export menu or Ctrl+S): one .ivsession file with the data, settings, data range, fit regions and results. Open it again like a data file to continue exactly where you stopped.",
+        "Manual OML, EEPF and EPFL windows remember their last settings and fit regions for the current data; “Start over” returns to the defaults.",
+      ],
+    },
     {
       version: "2.1.0",
       title: "Install as an app, works offline",
@@ -530,7 +681,9 @@
   let mainPlot;
 
   function init() {
+    fillIonSpecies();
     loadSettings();
+    syncIonMass();
     mainPlot = new IV.Plot($("mainPlot"), { filename: "iv_curves" });
     // dragging the range lines on the main plot edits the Data range fields
     mainPlot.onDrag = (id, x, final) => {
@@ -554,7 +707,11 @@
     $("exportAll").addEventListener("click", () => { closeMenus(); exportAllCSV(); });
     $("whatsNewBtn").addEventListener("click", showWhatsNew);
     $("aboutBtn").addEventListener("click", showAbout);
-    $("clearLog").addEventListener("click", () => $("log").replaceChildren(el("div.empty-state", { text: "Log cleared." })));
+    $("clearLog").addEventListener("click", () => {
+      state.cards = [];
+      $("log").replaceChildren(el("div.empty-state", { text: "Log cleared." }));
+    });
+    $("saveSession").addEventListener("click", () => { closeMenus(); saveSession(); });
 
     for (const id of ["showAll", "showMean"]) $(id).addEventListener("change", () => { saveSettings(); plotData(); });
     $("xaxis").addEventListener("change", () => {
@@ -569,7 +726,8 @@
     $("cropEnable").addEventListener("change", () => applyCrop());
     for (const id of ["skipStart", "skipEnd", "cropFrom", "cropTo"]) $(id).addEventListener("change", () => applyCrop());
     $("cropReset").addEventListener("click", () => { resetCropRange(); applyCrop(); });
-    for (const id of ["diameter", "length", "ionFraction", "smoothWindow"]) {
+    $("ionGas").addEventListener("change", () => { syncIonMass(); saveSettings(); });
+    for (const id of ["diameter", "length", "ionFraction", "smoothWindow", "ionMass"]) {
       $(id).addEventListener("change", () => {
         if (id === "smoothWindow" && Number.isFinite(parseFloat($(id).value))) {
           $(id).value = Math.min(501, N.makeOdd(parseFloat($(id).value)));  // the window actually used
@@ -617,6 +775,7 @@
     // keyboard shortcuts
     document.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "o") { e.preventDefault(); fileInput.click(); }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); if (state.scans) saveSession(); }
     });
 
     $("version").textContent = `v${APP_VERSION}`;

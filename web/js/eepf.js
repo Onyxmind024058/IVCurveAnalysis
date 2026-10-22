@@ -6,8 +6,9 @@
   const N = IV.num;
   const { el, numberField, checkField } = IV.ui;
 
-  function openEEPF({ V, I, probeArea, oml, title, onData }) {
-    const d = IV.ui.openDialog({ title, onClose: () => onData(current) });
+  /** params (optional): {d2Smooth, distSmooth, eMin, logY} from an earlier run. */
+  function openEEPF({ V, I, probeArea, oml, title, params, onData }) {
+    const d = IV.ui.openDialog({ title, onClose: () => onData(current, getParams()) });
     d.foot.remove();
     let current = null;
 
@@ -72,6 +73,16 @@
       });
     }
 
+    function getParams() {
+      return { d2Smooth: d2Smooth.value, distSmooth: distSmooth.value, eMin: eMin.value, logY: logY.value };
+    }
+
+    if (params) {
+      d2Smooth.set(params.d2Smooth);
+      distSmooth.set(params.distSmooth);
+      eMin.set(params.eMin);
+      logY.set(params.logY);
+    }
     update();
   }
 

@@ -7,7 +7,11 @@
   const { el, numberField, sliderField, checkField, selectField, fmtG } = IV.ui;
   const SMOOTH_METHODS = ["Moving average", "Polynomial / SG-like"];
 
-  function openManualOML({ V, I, probeArea, label = "Mean curve", onResults }) {
+  /**
+   * params (optional): settings returned by an earlier run (results.params);
+   * the window then replays those steps and opens on the last one reached.
+   */
+  function openManualOML({ V, I, probeArea, label = "Mean curve", params, onResults }) {
     const { V: v, I: cur } = N.sortedCurve(V, I);
     const n = v.length;
     const vMin = N.nanmin(v), vMax = N.nanmax(v);
@@ -17,6 +21,7 @@
       Vf: N.finiteCrossingX(v, cur), Vp1: NaN, Vp2: NaN, Vp: NaN,
       Te_eV: NaN, ne_m3: NaN, Iis_A: NaN, Ies_A: NaN,
       ionCoeff: null, Iion: null, Ie: null, transCoeff: null, satCoeff: null,
+      reached: 0,  // furthest step completed with "Next" (5 = finished)
     };
 
     const d = IV.ui.openDialog({ title: `Manual OML analysis — ${label}` });
@@ -62,7 +67,8 @@
     const smoothWindow = sliderField("Window:", { value: startWin, min: 3, max: winMax, step: 2, onChange: updateSmoothIV });
     const smoothOrder = numberField("Poly order:", { value: 2, step: 1, min: 1, max: 7, decimals: 0, width: "64px", onChange: updateSmoothIV });
     const analysable = checkField("Analysable", { checked: true });
-    t1.controls.append(smoothMethod.field, smoothWindow.field, smoothOrder.field, analysable.field, nextBtn("Next", nextFromSmooth));
+    const startOver = el("button.btn.hidden", { text: "Start over", title: "Back to the default settings", onclick: resetAll });
+    t1.controls.append(smoothMethod.field, smoothWindow.field, smoothOrder.field, analysable.field, startOver, nextBtn("Next", nextFromSmooth));
 
     function updateSmoothIV() {
       s.Ismooth = N.smoothSignal(cur, smoothMethod.value, N.makeOdd(smoothWindow.value), smoothOrder.value);
@@ -73,6 +79,7 @@
     }
 
     function nextFromSmooth() {
+      s.reached = Math.max(s.reached, 1);
       if (!analysable.value) {
         s.Vp = s.Vf = s.Te_eV = s.ne_m3 = s.Iis_A = s.Ies_A = NaN;
         updateResultsTable();
@@ -152,13 +159,19 @@
       });
     }
 
+    /** Electron current after ion-current subtraction, and its derivative. */
+    function electronCurrent() {
+      s.Ie = Float64Array.from(s.Ismooth, (x, k) => x - s.Iion[k]);
+      s.dIdV = N.gradient(s.Ie, v);
+    }
+
     function nextFromIon() {
       if (!s.ionCoeff) {
         IV.ui.message("Missing fit", "Please choose a valid ion fit region first.");
         return;
       }
-      s.Ie = Float64Array.from(s.Ismooth, (x, k) => x - s.Iion[k]);
-      s.dIdV = N.gradient(s.Ie, v);
+      s.reached = Math.max(s.reached, 2);
+      electronCurrent();
       updateDidvSmooth();
       tabs.select(2);
     }
@@ -182,6 +195,7 @@
 
     function nextFromDidvSmooth() {
       if (!s.dIdVsmooth) return;
+      s.reached = Math.max(s.reached, 3);
       let margin = n > 10 ? 5 : 0;
       let local = s.dIdVsmooth.slice(margin, n - margin);
       if (!local.length) { local = s.dIdVsmooth; margin = 0; }
@@ -210,6 +224,7 @@
     }
 
     function nextFromVp() {
+      s.reached = Math.max(s.reached, 4);
       s.Vp1 = vp.vp1.value;
       const span = vMax - vMin;
       const clip = (x) => Math.min(vMax, Math.max(vMin, x));
@@ -299,6 +314,7 @@
         return;
       }
       s.Te_eV = 1 / slope;
+      s.reached = 5;
       s.Vp2 = lf.vp2.value;
       if (Number.isFinite(s.Vp1) && Number.isFinite(s.Vp2)) s.Vp = 0.5 * (s.Vp1 + s.Vp2);
       else s.Vp = Number.isFinite(s.Vp1) ? s.Vp1 : s.Vp2;
@@ -334,13 +350,74 @@
         ion_i2_a: s.ionCoeff ? s.ionCoeff[0] : NaN,
         ion_i2_b: s.ionCoeff ? s.ionCoeff[1] : NaN,
         Vp_dIdV: s.Vp1, Vp_intersection: s.Vp2,
+        params: getParams(),
       });
       d.close();
     }
 
+    // ----- remember / replay settings ----------------------------------------
+    function getParams() {
+      return {
+        reached: s.reached,
+        smooth: { method: smoothMethod.value, window: smoothWindow.value, order: smoothOrder.value },
+        analysable: analysable.value,
+        ion: { vf: ion.vf.value, vmin: ion.vmin.value, vmax: ion.vmax.value },
+        didv: { method: dMethod.value, window: dWindow.value, order: dOrder.value },
+        vp1: s.Vp1,
+        log: { tmin: lf.tmin.value, tmax: lf.tmax.value, smin: lf.smin.value, smax: lf.smax.value, vp2: lf.vp2.value },
+      };
+    }
+
+    /** Replays the saved steps; stops where the saved analysis stopped (or where a step fails). */
+    function restore(p) {
+      startOver.classList.remove("hidden");
+      smoothMethod.set(p.smooth.method);
+      smoothWindow.set(p.smooth.window);
+      smoothOrder.set(p.smooth.order);
+      analysable.set(p.analysable !== false);
+      updateSmoothIV();
+      s.reached = p.reached || 0;
+      if (s.reached < 1) return tabs.select(0);
+      if (p.analysable === false) return nextFromSmooth();
+
+      ion.vf.set(p.ion.vf); ion.vmin.set(p.ion.vmin); ion.vmax.set(p.ion.vmax);
+      updateIonFit();
+      if (s.reached < 2 || !s.ionCoeff) return tabs.select(1);
+
+      electronCurrent();
+      dMethod.set(p.didv.method); dWindow.set(p.didv.window); dOrder.set(p.didv.order);
+      if (s.reached >= 3 && Number.isFinite(p.vp1)) { s.Vp1 = p.vp1; vp.vp1.set(p.vp1); }
+      updateDidvSmooth();
+      if (s.reached < 3) return tabs.select(2);
+
+      updateVpPlot();
+      if (s.reached < 4) return tabs.select(3);
+
+      lf.tmin.set(p.log.tmin); lf.tmax.set(p.log.tmax); lf.smin.set(p.log.smin); lf.smax.set(p.log.smax);
+      lf.vp2.set(p.log.vp2);
+      updateLogFitPreserveVp2();
+      if (s.reached < 5) return tabs.select(4);
+      finishAnalysis();
+    }
+
+    function resetAll() {
+      Object.assign(s, { Vp1: NaN, Vp2: NaN, Vp: NaN, Te_eV: NaN, ne_m3: NaN, Iis_A: NaN, Ies_A: NaN,
+        ionCoeff: null, Iion: null, Ie: null, dIdV: null, dIdVsmooth: null, transCoeff: null, satCoeff: null, reached: 0 });
+      smoothMethod.set(SMOOTH_METHODS[0]); smoothWindow.set(startWin); smoothOrder.set(2); analysable.set(true);
+      dMethod.set(SMOOTH_METHODS[0]); dWindow.set(startWin); dOrder.set(2);
+      startOver.classList.add("hidden");
+      updateResultsTable();
+      tabs.select(0);
+      updateSmoothIV();
+    }
+
     updateResultsTable();
-    tabs.select(0);
-    updateSmoothIV();
+    if (params) {
+      try { restore(params); } catch (_) { resetAll(); }
+    } else {
+      tabs.select(0);
+      updateSmoothIV();
+    }
   }
 
   IV.openManualOML = openManualOML;
