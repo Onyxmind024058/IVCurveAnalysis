@@ -381,7 +381,7 @@
       method: "Automatic OML",
       Vf: vf, Vp: vp, Te_eV: teEV, Ies_A: ies, ne_m3: ne,
       Iis_A: ionCurrentAt(vf, a, b, signI),
-      ion_i2_a: a, ion_i2_b: b, ion_sign: signI,
+      ion_i2_a: a, ion_i2_b: b,
       x, I_raw: i, I_smooth: ismooth, Iion: iIon, Ie: ie,
     };
   }
@@ -418,8 +418,8 @@
       if (oml.Iion && oml.x) {
         Iion = interp(V, oml.x, oml.Iion);
       } else if (Number.isFinite(oml.ion_i2_a) && Number.isFinite(oml.ion_i2_b)) {
-        const signI = Number.isFinite(oml.ion_sign) && oml.ion_sign !== 0 ? oml.ion_sign : -1;
-        Iion = Float64Array.from(V, (v) => ionCurrentAt(v, oml.ion_i2_a, oml.ion_i2_b, signI));
+        // ion current is negative by convention
+        Iion = Float64Array.from(V, (v) => ionCurrentAt(v, oml.ion_i2_a, oml.ion_i2_b, -1));
       } else {
         throw new Error("Ion-current fit is missing. Run automatic or manual OML first.");
       }
@@ -588,17 +588,18 @@
     const vlo = min(V) - 100, vhi = max(V) + 100;
     let ne, Te, Vp, Vf;
 
-    // ne and Vp only enter the model as ne*exp(-Vp/Te), so they cannot be
-    // fitted together: Vp always stays at the value given (dI/dV / transition).
-    Vp = Vp0;
-    if (fitMode === "ne, Te, Vf") {
-      [ne, Te, Vf] = curveFit((v, n_, te, vf) => epflModel(v, n_, te, Vp0, vf), V, J,
-        [Math.max(ne0, 1e12), Math.max(Te0, 0.05), Vf0],
-        [0, 1e-4, vlo], [Infinity, Infinity, vhi]);
+    if (fitMode === "all") {
+      [ne, Te, Vp, Vf] = curveFit(epflModel, V, J,
+        [Math.max(ne0, 1e12), Math.max(Te0, 0.05), Vp0, Vf0],
+        [0, 1e-4, vlo, vlo], [Infinity, Infinity, vhi, vhi]);
+    } else if (fitMode === "Vp, ne") {
+      [ne, Vp] = curveFit((v, n_, vp) => epflModel(v, n_, Te0, vp, Vf0), V, J,
+        [Math.max(ne0, 1e12), Vp0], [0, vlo], [Infinity, vhi]);
+      Te = Te0; Vf = Vf0;
     } else {
       [ne] = curveFit((v, n_) => epflModel(v, n_, Te0, Vp0, Vf0), V, J,
         [Math.max(ne0, 1e12)], [0], [Infinity]);
-      Te = Te0; Vf = Vf0;
+      Te = Te0; Vp = Vp0; Vf = Vf0;
     }
     const Vfit = Float64Array.from(V);
     return {

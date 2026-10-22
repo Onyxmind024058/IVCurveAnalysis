@@ -26,8 +26,7 @@
     const halfPts = numberField("Transition fit half-width points:", { value: 5, step: 1, min: 2, max: 500, decimals: 0, width: "80px", onChange: recalc });
     const vaSpin = numberField("Va upper limit for Te fit:", { value: 0, step: 0.1, min: vMin - 1000, max: vMax + 1000, decimals: 4, width: "110px", onChange: recalc });
     const offset = numberField("Log offset factor:", { value: 1, step: 0.1, min: 0, max: 1e6, decimals: 4, width: "90px", onChange: recalc });
-    const fitMode = selectField("Exponential fitting:", ["ne", "ne, Te, Vf"], { onChange: recalc });
-    fitMode.field.title = "Vp is not fitted: in the model ne and Vp only appear as ne·exp(−Vp/Te), so they cannot be separated. Vp comes from the dI/dV peak (draggable).";
+    const fitMode = selectField("Exponential fitting:", ["ne", "Vp, ne", "all"], { onChange: recalc });
     const errorLine = el("span.hint", { style: "color:var(--red)" });
 
     d.body.append(el("div.controls", { style: "border-top:none;border-bottom:1px solid var(--border)" },
