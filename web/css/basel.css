@@ -235,6 +235,7 @@ a { color: var(--text); text-decoration-color: var(--mint-hover); }
 .btn:disabled { color: var(--disabled-text); background: var(--disabled-bg); border-color: var(--disabled-border); cursor: default; }
 .btn.primary { background: var(--mint); border-color: var(--mint-hover); color: var(--on-mint); font-weight: 600; }
 .btn.primary:hover { background: var(--mint-hover); }
+.btn.primary:disabled { background: var(--disabled-bg); border-color: var(--disabled-border); color: var(--disabled-text); font-weight: 400; }
 .btn.destructive { border-color: var(--red); color: var(--red); }
 .btn.destructive:hover { background: var(--red-hover-bg); }
 .btn.ghost { background: transparent; border-color: transparent; }
@@ -406,7 +407,8 @@ dialog.win {
   height: min(880px, calc(100vh - 32px));
   max-width: none; max-height: none;
 }
-dialog.win.small { width: min(460px, calc(100vw - 32px)); height: auto; }
+dialog.win.small { width: min(460px, calc(100vw - 32px)); height: fit-content; max-height: calc(100vh - 32px); }
+dialog.win.small .win-body { overflow: auto; }
 dialog.win::backdrop { background: rgba(20, 26, 28, .45); }
 dialog.win[open] { display: flex; flex-direction: column; }
 .win-head {

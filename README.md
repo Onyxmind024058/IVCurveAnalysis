@@ -1,24 +1,18 @@
 # Langmuir Probe IV Analyser UB
 
-A Python/PySide6 graphical application for loading `.lda` Langmuir probe files, plotting individual and averaged I–V curves, and extracting plasma parameters using automatic OML-style analysis, manual OML analysis, EEDF/EEPF calculation, and an EPFL two-fluid model.
+A browser application for loading Langmuir probe measurements (`.lda` or CSV files), plotting individual and averaged I–V curves, and extracting plasma parameters using automatic OML-style analysis, manual OML analysis, EEDF/EEPF calculation, and an EPFL two-fluid model.
 
 The program is designed for interactive analysis of Langmuir probe measurements, especially when automatic fitting is not sufficient and the user needs to manually select fit regions.
 
-To use the software, you can either download the last release and follow the setup instruction.
-Or compile this code using pyinstaller: 
-```bash
-pyinstaller --onefile --windowed --name Langmuir_Probe_IV_Analyser_UB --icon=icon.ico --add-data "splash.png;." --add-data "icon.ico;." main.py
-```
-### Browser version (no installation) — recommended
+> The original Python/PySide6 desktop application is **no longer maintained**. It is kept for reference in [`archive/python-desktop/`](archive/python-desktop/). New features and fixes go into the browser version only.
 
-> The Python/PySide6 desktop application (`main.py`) is **no longer maintained**. New features and fixes go into the browser version only.
+### Browser version (no installation)
 
+The app lives in the `web/` folder and runs entirely in the browser, in the spirit of ImageJ.js:
 
-The `web/` folder contains a browser edition of the same analyser, in the spirit of ImageJ.js:
-
-- **Run it:** open `web/index.html` in any modern browser (double-click it). No Python, no install, no internet required, as all libraries are bundled.
+- **Run it:** use the GitHub Pages site, or download the repository and open `web/index.html` in any modern browser (double-click it). No Python, no install, no internet required, as all libraries are bundled.
 - **Private:** `.lda` files are read locally by the browser and never uploaded.
-- **Analysis core:** `web/js/numerics.js`, started as a port of `main.py`, with these corrections (v2.0.0):
+- **Analysis core:** `web/js/numerics.js`, ported from the Python app (`archive/python-desktop/main.py`), with these corrections (v2.0.0):
   - EEDF and EEPF were swapped. The Druyvesteyn expression `2·sqrt(2·mₑ)/(e³·A) · d²Iₑ/dV²` is the EEPF; EEDF = EEPF·sqrt(ε). Both are shown per eV (m⁻³ eV⁻¹, m⁻³ eV⁻³ᐟ²), and the EEPF window shows the density ∫EEDF dε next to the OML ne as a check.
   - Iis is the ion current from the I² fit evaluated at **Vf** (it was evaluated at 0 V).
   - EPFL two-fluid: the model is written relative to Vp so the exponentials cannot overflow.
@@ -27,7 +21,8 @@ The `web/` folder contains a browser edition of the same analyser, in the spirit
 - **Data files:** opens `.lda` files and CSV/text files. The CSV importer detects the separator (comma, semicolon, tab or spaces) and decimal commas, skips header/metadata lines, and lets you pick the voltage column, the current column(s) (one scan each) and the current unit (A, mA, µA, nA), with a live preview. Files exported by this app can be opened again.
 - **Data range:** in the *Data range* panel, the curve can be reduced before any analysis: skip the first/last N points of every sweep (e.g. start-up transients) and/or keep only a voltage window, set by typing or by dragging the lines on the main plot. All analyses and exports use the reduced curve.
 - **Theme:** University of Basel light/dark theme (switch in the top-right corner).
-- **Host it (optional):** the folder is static, so it can also be served from GitHub Pages or any web server.
+- **Host it:** the folder is static, so it can be served from GitHub Pages or any web server.
+- **What's new:** the *What's new* button lists the changes of each version; it opens by itself once after an update.
 
 ---
 
@@ -193,25 +188,13 @@ This is useful for quickly pasting plots or data into reports, notebooks, or spr
 
 ## 2. Requirements
 
-The program requires Python 3 and the following packages:
-
-```bash
-pip install numpy matplotlib PySide6 scipy
-```
-
-`scipy` is only required for the nonlinear EPFL two-fluid fit. Most of the program works without it, but the nonlinear EPFL fit will fail if `scipy` is missing.
+A recent browser: Chrome, Edge, Firefox or Safari. Nothing to install.
 
 ---
 
 ## 3. Running the Program
 
-From a terminal:
-
-```bash
-python langmuir_probe_analyser.py
-```
-
-The main window will open.
+Open the GitHub Pages site, or open `web/index.html` from a downloaded copy of the repository. Files are read locally and never uploaded.
 
 ---
 
@@ -572,7 +555,6 @@ A typical project folder can be:
 ```text
 project/
 │
-├── langmuir_probe_analyser.py
 ├── data/
 │   ├── measurement_01.lda
 │   └── measurement_02.lda
@@ -586,24 +568,9 @@ project/
 
 ---
 
-## 12. Building an Executable
+## 12. Building the Old Desktop Executable
 
-The program can be packaged with PyInstaller.
-
-Example:
-
-```bash
-pip install pyinstaller
-pyinstaller --onefile --windowed langmuir_probe_analyser.py
-```
-
-The executable will be created in the `dist/` folder.
-
-For debugging, build without `--windowed` so that terminal errors remain visible:
-
-```bash
-pyinstaller --onefile langmuir_probe_analyser.py
-```
+The Python desktop app is archived and no longer maintained. Build instructions are in [`archive/python-desktop/README.md`](archive/python-desktop/README.md).
 
 ---
 
@@ -630,7 +597,7 @@ Manual validation is recommended for final physical interpretation.
 
 This program provides an interactive workflow for Langmuir probe analysis:
 
-1. load `.lda` files
+1. load `.lda` or CSV files
 2. inspect individual and averaged I–V curves
 3. run automatic OML analysis
 4. refine the analysis manually

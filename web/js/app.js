@@ -6,10 +6,8 @@
   const N = IV.num;
   const { el, fmtG, fmtE, toast } = IV.ui;
 
-  // Single source of the version shown in the app and used by the update check.
+  // Single source of the version shown in the app and in "What's new".
   const APP_VERSION = "2.0.0";
-  const GITHUB_OWNER = "Onyxmind024058";
-  const GITHUB_REPO = "IVcurveAnalysis";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -458,40 +456,50 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Updates / about
+  // What's new / about
   // ---------------------------------------------------------------------------
 
-  async function checkForUpdates(silent) {
-    let release;
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 10000);
-      const resp = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`, {
-        headers: { Accept: "application/vnd.github+json" }, signal: ctrl.signal,
-      });
-      clearTimeout(timer);
-      if (!resp.ok) throw new Error(`GitHub returned an error: HTTP ${resp.status}`);
-      release = await resp.json();
-    } catch (e) {
-      if (!silent) IV.ui.message("Update check failed", IV.escape(e.message || "Could not reach GitHub."));
+  /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
+  const CHANGELOG = [
+    {
+      version: "2.0.0",
+      title: "Browser edition",
+      items: [
+        "Runs in the browser — nothing to install, files stay on your computer.",
+        "University of Basel light and dark theme.",
+        "CSV and text files can be imported next to .lda, with column, unit and preview selection.",
+        "Data range panel: skip the first/last points of each sweep and/or keep a voltage window before analysis.",
+        "EEDF and EEPF were swapped; both are now given per eV, and the EEPF window shows the density from the EEDF next to the OML ne.",
+        "Iis is now the ion current at Vf (it was taken at 0 V).",
+        "EPFL two-fluid model can no longer overflow; rebinning keeps the last point.",
+        "Up/down sweeps are kept as separate curves instead of being mixed in the average.",
+        "This “What’s new” window replaces the update check: the web version is always up to date.",
+      ],
+    },
+  ];
+  const SEEN_KEY = "ivcurve.lastSeenVersion";
+
+  function showWhatsNew() {
+    const html = CHANGELOG.map((rel) =>
+      `<h3 style="font-size:15px;margin:0 0 4px">Version ${IV.escape(rel.version)}`
+      + (rel.title ? ` <span class="muted" style="font-family:var(--font);font-size:12px">· ${IV.escape(rel.title)}</span>` : "")
+      + `</h3><ul style="margin:0 0 14px;padding-left:18px">`
+      + rel.items.map((it) => `<li style="margin:3px 0">${IV.escape(it)}</li>`).join("")
+      + "</ul>").join("");
+    IV.ui.message("What’s new", html);
+    try { localStorage.setItem(SEEN_KEY, APP_VERSION); } catch (_) { /* ignore */ }
+  }
+
+  /** Open "What's new" once after the app was updated (not on a first visit). */
+  function announceUpdate() {
+    let seen = null;
+    try { seen = localStorage.getItem(SEEN_KEY); } catch (_) { return; }
+    if (seen === APP_VERSION) return;
+    if (seen === null) {
+      try { localStorage.setItem(SEEN_KEY, APP_VERSION); } catch (_) { /* ignore */ }
       return;
     }
-    const tag = String(release.tag_name || "").trim();
-    if (!tag) {
-      if (!silent) IV.ui.message("Updates", "No valid release tag found on GitHub.");
-      return;
-    }
-    if (!N.isNewerVersion(tag, APP_VERSION)) {
-      if (!silent) IV.ui.message("No update available", `You already have the latest version (${APP_VERSION}).`);
-      return;
-    }
-    const notes = String(release.body || "").trim().slice(0, 3000);
-    const choice = await IV.ui.message("Update available",
-      `<p>A newer version is available.</p><p>Current version: <b>${IV.escape(APP_VERSION)}</b><br>Latest version: <b>${IV.escape(N.normalizeVersion(tag))}</b></p>`
-      + (release.name ? `<p>${IV.escape(release.name)}</p>` : "")
-      + (notes ? `<details><summary>Release notes</summary><pre style="white-space:pre-wrap;font-size:12px">${IV.escape(notes)}</pre></details>` : ""),
-      [{ label: "Close" }, { label: "Open release page", value: "open", primary: true }]);
-    if (choice === "open" && release.html_url) window.open(release.html_url, "_blank", "noopener");
+    showWhatsNew();
   }
 
   function showAbout() {
@@ -532,7 +540,7 @@
     $("epflBtn").addEventListener("click", openEPFL);
     $("exportMean").addEventListener("click", () => { closeMenus(); exportMeanCSV(); });
     $("exportAll").addEventListener("click", () => { closeMenus(); exportAllCSV(); });
-    $("updatesBtn").addEventListener("click", () => checkForUpdates(false));
+    $("whatsNewBtn").addEventListener("click", showWhatsNew);
     $("aboutBtn").addEventListener("click", showAbout);
     $("clearLog").addEventListener("click", () => $("log").replaceChildren(el("div.empty-state", { text: "Log cleared." })));
 
@@ -601,7 +609,7 @@
 
     $("version").textContent = `v${APP_VERSION}`;
     status("Ready — open a .lda file or drop it on the window");
-    setTimeout(() => checkForUpdates(true), 1500);
+    setTimeout(announceUpdate, 800);
   }
 
   document.addEventListener("DOMContentLoaded", init);
