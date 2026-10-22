@@ -608,31 +608,6 @@
     };
   }
 
-  // ---------------------------------------------------------------------------
-  // Version helpers (update check)
-  // ---------------------------------------------------------------------------
-
-  const normalizeVersion = (v) => String(v || "").trim().replace(/^v+/, "").trim();
-
-  function parseVersionTuple(v) {
-    v = normalizeVersion(v);
-    if (!v) return [0];
-    return v.split(".").map((chunk) => {
-      const m = chunk.match(/^\d+/);
-      return m ? parseInt(m[0], 10) : 0;
-    });
-  }
-
-  function isNewerVersion(latest, current) {
-    const a = parseVersionTuple(latest), b = parseVersionTuple(current);
-    for (let k = 0; k < Math.max(a.length, b.length); k++) {
-      if (k >= a.length) return false;
-      if (k >= b.length) return true;
-      if (a[k] !== b[k]) return a[k] > b[k];
-    }
-    return false;
-  }
-
   const api = {
     E_CHARGE, M_E,
     argsort, take, sign, min, max, nanmin, nanmax, argmax, nanargmax, nanmedian, nanmean,
@@ -640,7 +615,6 @@
     makeOdd, movingAverage, polynomialSmooth, smoothSignal,
     averageScans, finiteCrossingX, fitLineRegion, sortedCurve,
     analyseOML, ionCurrentAt, computeEEPF, trapz, uniqueSorted, splitSweeps, rebinCurve, epflModel, curveFit, fitEPFLTwoFluid,
-    normalizeVersion, parseVersionTuple, isNewerVersion,
   };
 
   root.IV = Object.assign(root.IV || {}, { num: api });
