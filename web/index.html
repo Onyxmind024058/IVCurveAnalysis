@@ -6,6 +6,11 @@
   <title>Langmuir Probe IV Analyser UB</title>
   <meta name="description" content="Browser-based Langmuir probe I-V analysis: OML, EEPF/EEDF and EPFL two-fluid model. Runs locally; files never leave your computer.">
   <link rel="icon" href="icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="theme-color" content="#FFFFFF">
+  <meta name="apple-mobile-web-app-title" content="IV Analyser">
+  <meta name="mobile-web-app-capable" content="yes">
   <script>
     // apply the stored theme before first paint
     try { const t = localStorage.getItem("ivcurve.theme"); if (t) document.documentElement.dataset.theme = t; } catch (_) {}
@@ -53,6 +58,10 @@
       </div>
     </div>
     <span class="spacer"></span>
+    <button class="btn hidden" id="installBtn" data-tip="Install as an app that also works offline">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+      Install app
+    </button>
     <button class="btn ghost" id="whatsNewBtn">What’s new</button>
     <button class="btn ghost" id="aboutBtn">About</button>
   </nav>
@@ -128,7 +137,7 @@
 
   <!-- status bar -->
   <footer class="statusbar">
-    <span id="statusText">Loading…</span>
+    <span><span class="badge offline hidden" id="offlineBadge">Offline — using the saved copy</span> <span id="statusText">Loading…</span></span>
     <span>Basel theme · <span id="themeName">Light</span> · <span id="version"></span></span>
   </footer>
 </div>
@@ -146,5 +155,6 @@
 <script src="js/eepf.js"></script>
 <script src="js/epfl.js"></script>
 <script src="js/app.js"></script>
+<script src="js/pwa.js"></script>
 </body>
 </html>

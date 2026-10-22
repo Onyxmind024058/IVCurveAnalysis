@@ -498,3 +498,6 @@ dialog.win.medium { width: min(1100px, calc(100vw - 32px)); height: min(760px, c
 .crop-info.warn { color: var(--red); }
 .form .row-actions { grid-column: 1 / -1; display: flex; gap: 6px; }
 .form .row-actions .btn { min-height: 26px; padding: 3px 10px; font-size: 12px; }
+
+/* offline indicator in the status bar */
+.badge.offline { background: var(--border); color: var(--text); margin-right: 6px; }
