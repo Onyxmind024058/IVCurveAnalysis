@@ -19,7 +19,8 @@
       "accept": {
         "application/xml": [".lda"],
         "text/csv": [".csv"],
-        "text/plain": [".txt", ".dat", ".tsv"]
+        "text/plain": [".txt", ".dat", ".tsv"],
+        "application/json": [".ivsession"]
       }
     }
   ],

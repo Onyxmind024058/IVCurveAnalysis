@@ -185,7 +185,11 @@
       clearTimeout(timer);
       timer = setTimeout(() => onChange && onChange(Number(input.value)), 30);
     });
-    return { field, input, get value() { return Number(input.value); } };
+    return {
+      field, input,
+      get value() { return Number(input.value); },
+      set(v) { input.value = v; paint(); },
+    };
   }
 
   function checkField(label, { checked = false, onChange } = {}) {
@@ -193,7 +197,7 @@
     input.checked = checked;
     const field = el("label.check", {}, [input, label]);
     input.addEventListener("change", () => onChange && onChange(input.checked));
-    return { field, input, get value() { return input.checked; } };
+    return { field, input, get value() { return input.checked; }, set(v) { input.checked = !!v; } };
   }
 
   function selectField(label, options, { value, onChange } = {}) {
@@ -201,7 +205,7 @@
     if (value !== undefined) select.value = value;
     const field = el("div.field", {}, [el("label", { text: label }), select]);
     select.addEventListener("change", () => onChange && onChange(select.value));
-    return { field, select, get value() { return select.value; } };
+    return { field, select, get value() { return select.value; }, set(v) { if (v !== undefined) select.value = v; } };
   }
 
   /** Simple tab strip; returns {strip, panels[], select(i), current} */

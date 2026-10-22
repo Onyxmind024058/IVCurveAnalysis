@@ -35,11 +35,11 @@
 
   <!-- toolbar -->
   <nav class="toolbar" aria-label="Main actions">
-    <button class="btn" id="openBtn" data-tip="Open a .lda or .csv file (Ctrl+O)">
+    <button class="btn" id="openBtn" data-tip="Open a .lda, .csv or saved .ivsession file (Ctrl+O)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h6l2 2h10v10H3z"/></svg>
       Open .lda / .csv
     </button>
-    <input type="file" id="fileInput" accept=".lda,.xml,.csv,.tsv,.txt,.dat,application/xml,text/xml,text/csv,text/plain" hidden>
+    <input type="file" id="fileInput" accept=".lda,.xml,.csv,.tsv,.txt,.dat,.ivsession,.json,application/xml,text/xml,text/csv,text/plain,application/json" hidden>
     <button class="btn" id="exampleBtn" data-tip="Synthetic data: Te = 3 eV, Vp = 10 V">Example data</button>
     <span class="sep"></span>
     <button class="btn primary" id="analyseBtn" data-needs-data disabled>Analyse averaged I-V</button>
@@ -49,10 +49,12 @@
     <span class="sep"></span>
     <div class="menu-wrap">
       <button class="btn" id="exportBtn" data-needs-data disabled aria-haspopup="true" aria-expanded="false">
-        Export
+        Save / Export
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
       </button>
       <div class="menu" id="exportMenu" role="menu">
+        <button role="menuitem" id="saveSession">Save analysis (.ivsession)…</button>
+        <hr>
         <button role="menuitem" id="exportMean">Export mean CSV</button>
         <button role="menuitem" id="exportAll">Export all analysis CSV</button>
       </div>
@@ -105,6 +107,10 @@
           <div class="unit-input"><input type="number" id="length" data-label="length" min="0.001" max="1000" step="0.1" value="10"><span>mm</span></div>
           <label for="ionFraction">Ion fit fraction</label>
           <input type="number" id="ionFraction" data-label="ion fit fraction" min="0.01" max="0.5" step="0.01" value="0.2">
+          <label for="ionGas">Ion species</label>
+          <select id="ionGas"></select>
+          <label for="ionMass">Ion mass</label>
+          <div class="unit-input"><input type="number" id="ionMass" data-label="ion mass" min="0.5" max="500" step="0.001" value="39.948"><span>amu</span></div>
           <label for="smoothWindow">Smoothing window</label>
           <input type="number" id="smoothWindow" data-label="smoothing window" min="3" max="501" step="2" value="21">
         </div>

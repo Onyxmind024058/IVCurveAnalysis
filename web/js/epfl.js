@@ -6,7 +6,8 @@
   const N = IV.num;
   const { el, numberField, selectField, fmtG } = IV.ui;
 
-  function openEPFL({ V, I, probeArea, title, onResults }) {
+  /** params (optional): control values from an earlier run (results.params). */
+  function openEPFL({ V, I, probeArea, title, params, onResults }) {
     const raw = N.sortedCurve(V, I);
     const rb = N.rebinCurve(raw.V, raw.I, raw.I.length);
     const v = rb.V, cur = rb.I;
@@ -204,11 +205,28 @@
     }
 
     function sendResults() {
-      onResults({ method: "EPFL two-fluid", Vp: s.Vp, Vf: s.Vf, Te_eV: s.Te_eV, ne_m3: s.ne_m3, fit_mode: fitMode.value });
+      onResults({
+        method: "EPFL two-fluid", Vp: s.Vp, Vf: s.Vf, Te_eV: s.Te_eV, ne_m3: s.ne_m3, fit_mode: fitMode.value,
+        params: {
+          smooth: smooth.value, vp: vpSpin.value, halfPts: halfPts.value, va: vaSpin.value,
+          offset: offset.value, fitMode: fitMode.value, fitted: !!s.fit,
+        },
+      });
       d.close();
     }
 
-    resetGuesses();
+    if (params) {
+      smooth.set(params.smooth);
+      vpSpin.set(params.vp);
+      halfPts.set(params.halfPts);
+      vaSpin.set(params.va);
+      offset.set(params.offset);
+      fitMode.set(params.fitMode);
+      recalculateAll();
+      if (params.fitted) runNonlinearFit();
+    } else {
+      resetGuesses();
+    }
   }
 
   IV.openEPFL = openEPFL;

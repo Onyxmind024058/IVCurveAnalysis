@@ -10,6 +10,13 @@
 
   const E_CHARGE = 1.602176634e-19;
   const M_E = 9.10938356e-31;
+  const AMU = 1.66053906660e-27;
+
+  /** Singly charged ions; mass in amu. */
+  const ION_SPECIES = {
+    "Ar⁺": 39.948, "He⁺": 4.0026, "Ne⁺": 20.180, "Kr⁺": 83.798, "Xe⁺": 131.29,
+    "H⁺": 1.0073, "H₂⁺": 2.0157, "H₃⁺": 3.0235, "N₂⁺": 28.014, "O₂⁺": 31.998,
+  };
 
   // ---------------------------------------------------------------------------
   // Small array helpers (numpy equivalents)
@@ -337,6 +344,19 @@
     return signI * Math.sqrt(Math.max(a * V + b, 0));
   }
 
+  /**
+   * Ion density from the OML ion current of a cylindrical probe (Chen 2001):
+   *   I_i = A n_i e (sqrt(2)/pi) sqrt(e (Vp - V) / m_i)
+   *   =>  I_i^2 = a V + b  with  |a| = 2 A^2 n_i^2 e^3 / (pi^2 m_i)
+   *   =>  n_i = (pi / (A e)) sqrt(m_i |a| / (2 e))
+   * a is the slope of the I^2(V) fit (A^2/V); it must be negative.
+   */
+  function ionDensityOML(a, probeArea, massAmu) {
+    if (!(a < 0) || !(probeArea > 0) || !(massAmu > 0)) return NaN;
+    const mi = massAmu * AMU;
+    return (Math.PI / (probeArea * E_CHARGE)) * Math.sqrt((mi * Math.abs(a)) / (2 * E_CHARGE));
+  }
+
   // ---------------------------------------------------------------------------
   // Automatic first-pass OML analysis
   // ---------------------------------------------------------------------------
@@ -609,7 +629,7 @@
   }
 
   const api = {
-    E_CHARGE, M_E,
+    E_CHARGE, M_E, AMU, ION_SPECIES, ionDensityOML,
     argsort, take, sign, min, max, nanmin, nanmax, argmax, nanargmax, nanmedian, nanmean,
     linspace, interp, gradient, polyfit, polyval, lstsq,
     makeOdd, movingAverage, polynomialSmooth, smoothSignal,
