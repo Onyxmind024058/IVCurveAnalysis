@@ -1,0 +1,28 @@
+{
+  "name": "Langmuir Probe IV Analyser UB (pre-alpha)",
+  "short_name": "IV Analyser α",
+  "description": "Langmuir probe I-V analysis: OML, EEPF/EEDF and EPFL two-fluid model. Runs locally; files never leave your computer.",
+  "id": "./",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F4F6F5",
+  "theme_color": "#FFFFFF",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "file_handlers": [
+    {
+      "action": "./index.html",
+      "accept": {
+        "application/xml": [".lda"],
+        "text/csv": [".csv"],
+        "text/plain": [".txt", ".dat", ".tsv"],
+        "application/json": [".ivsession"]
+      }
+    }
+  ],
+  "launch_handler": { "client_mode": "focus-existing" }
+}

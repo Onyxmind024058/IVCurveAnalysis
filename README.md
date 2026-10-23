@@ -4,6 +4,8 @@
 
 🧪 Beta with the new **assisted batch review**: [onyxmind024058.github.io/IVCurveAnalysis/web-beta/](https://onyxmind024058.github.io/IVCurveAnalysis/web-beta/), see [Beta: assisted batch review](#beta-assisted-batch-review).
 
+🔬 Pre-alpha for **collecting training data for machine learning**: [onyxmind024058.github.io/IVCurveAnalysis/web-alpha/](https://onyxmind024058.github.io/IVCurveAnalysis/web-alpha/), see [Pre-alpha: machine learning](#pre-alpha-machine-learning). Not for results.
+
 A browser application for loading Langmuir probe measurements (`.lda` or CSV files), plotting individual and averaged I–V curves, and extracting plasma parameters using automatic OML-style analysis, manual OML analysis, EEDF/EEPF calculation, and an EPFL two-fluid model.
 
 The program is designed for interactive analysis of Langmuir probe measurements, especially when automatic fitting is not sufficient and the user needs to manually select fit regions. It runs entirely in your browser: measurement files are read locally and **never uploaded**.
@@ -73,6 +75,29 @@ The beta (`web-beta/`, link at the top) adds **batch review** for a series of me
 
 The proposals never replace the review: they only save the clicks. The quality limits are in `web-beta/js/auto.js` (`LIMITS`).
 
+## Pre-alpha: machine learning
+
+`web-alpha/` is the beta plus the groundwork for a **fit-region model**: a model that learns where people put the fit regions (Vf, ion range, dI/dV Vp line, transition and saturation windows) and proposes them for new curves. It is **trained once** on about **200 reviewed curves** and then **shipped with the app**, ready to use; users do not train anything. The physics (Te, ne, Vp…) is still computed by the normal analysis, and every curve is still reviewed.
+
+**1. Collect (everyone, in the pre-alpha)**
+- Every curve you **review and accept** in the batch review or the manual OML window is added to a local training set (curve + your regions + your results + probe/ion/data range). Curves accepted with *Accept all good* (no human look) are **not** added.
+- **Training α** shows the progress towards 200, lists the curves, and **exports** them as one `.ivtrain` file (≈ 40 kB per curve). Send that file to the maintainer. Collection can be switched off in that window.
+- The data stays in the browser on that computer until exported; nothing is uploaded.
+
+**2. Train (once, maintainer)**
+```bash
+node web-alpha/ml/train.js data/*.ivtrain                   # writes web-alpha/model/regions-model.js + training-report.md
+node web-alpha/ml/train.js data/*.ivtrain --out /tmp/try    # inspect first without replacing the shipped model
+```
+- Model: one ridge regression per boundary that learns the **corrections people make to the rule-based proposal**, in units of Te. It is small (a few kB) and explainable.
+- The script validates by **cross-validation** (held-out curves) and corrects only the boundaries where the model beats the rules. `training-report.md` compares rules and model: distance of each boundary to the reviewers' choice, and the resulting Te and Vp errors. **Ship the model only if it is clearly better than the rules.**
+- To try a model in the app before shipping: *Training α → Load model file for testing…* (until the page is reloaded).
+
+**3. Use (after shipping)**
+- In the batch review, *Proposals from: model*. If the model's proposal for a curve gets more quality warnings than the rules' proposal, the rules' one is used (and shown as such). The quality checks and the review are unchanged.
+
+**Pipeline check with synthetic data:** `node web-alpha/ml/synthetic.js 200 > synthetic.ivtrain` makes curves labelled by a simulated reviewer with known habits. Trained on them, the model reduces the error of the dI/dV Vp line from ≈ 1.3 V to ≈ 0.05 V and the Te error against the reviewer from ≈ 0.6 % to ≈ 0.05 % on curves it never saw. Real curves will be harder; the report will tell.
+
 ## Checking the physics (automatic tests)
 
 `web/tests/numerics.test.js` checks the analysis code on synthetic curves with known answers (Te, nₑ, nᵢ, Iis at Vf, EEDF density, Te from Vp − Vf, averaging, EPFL). With [Node.js](https://nodejs.org) 18 or newer, from the repository folder:
@@ -81,6 +106,7 @@ The proposals never replace the review: they only save the clicks. The quality l
 node --test web/tests/numerics.test.js
 node --test web/tests/release.test.js
 node --test web-beta/tests/numerics.test.js web-beta/tests/auto.test.js web-beta/tests/release.test.js   # beta
+node --test web-alpha/tests/*.test.js                                                                        # pre-alpha, incl. the model
 ```
 
 All tests should report `ok`. Run them after every change to the analysis code.
