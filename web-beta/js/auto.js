@@ -219,7 +219,8 @@
    * Reasons to look at a curve. r: results with .diag; extra: {ni_m3, Te_VpVf_OML_eV, Te_VpVf_planar_eV}.
    * Thresholds are deliberately simple (beta) and listed here so they can be tuned.
    */
-  const LIMITS = { r2Trans: 0.995, r2Ion: 0.9, minSatPts: 5, edgeFrac: 0.03, teMin: 0.2, teMax: 30, niRatio: [0.2, 5], vpSpreadTe: 1.5 };
+  // Vp agreement (dI/dV vs intersection) uses N.VP_AGREEMENT: flagged above 10 %.
+  const LIMITS = { r2Trans: 0.995, r2Ion: 0.9, minSatPts: 5, edgeFrac: 0.03, teMin: 0.2, teMax: 30, niRatio: [0.2, 5] };
 
   function qualityFlags(r, extra = {}) {
     const d = r.diag || {};
@@ -231,9 +232,9 @@
     else if (d.satSlope >= d.transSlope) f.push("No clear knee: saturation is as steep as the transition");
     if (Number.isFinite(d.vMax) && r.Vp_dIdV > d.vMax - LIMITS.edgeFrac * (d.vMax - d.vMin)) f.push("Vp is at the end of the sweep");
     if (!(r.Te_eV >= LIMITS.teMin && r.Te_eV <= LIMITS.teMax)) f.push(`Te = ${r.Te_eV.toFixed(2)} eV is outside ${LIMITS.teMin}–${LIMITS.teMax} eV`);
-    if (Number.isFinite(r.Vp_dIdV) && Number.isFinite(r.Vp_intersection)
-      && Math.abs(r.Vp_dIdV - r.Vp_intersection) > LIMITS.vpSpreadTe * r.Te_eV) {
-      f.push(`Vp from dI/dV and from the fit intersection differ by ${Math.abs(r.Vp_dIdV - r.Vp_intersection).toFixed(2)} V`);
+    const va = N.vpAgreement(r.Vp_dIdV, r.Vp_intersection);
+    if (va.checked && va.level === "poor") {
+      f.push(`Vp from dI/dV and from the fit intersection differ by ${va.pct.toFixed(1)} % (more than ${N.VP_AGREEMENT.fair} %)`);
     }
     const c = N.teConsistency(r.Te_eV, extra.Te_VpVf_OML_eV, extra.Te_VpVf_planar_eV);
     if (c.checked && !c.ok) f.push("Te differs by more than 30 % from Te from Vp − Vf");

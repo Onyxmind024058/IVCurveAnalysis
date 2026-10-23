@@ -233,7 +233,7 @@
   function exportCSV() {
     const cols = ["file", batch.paramName || "parameter", "status", "reviewed_by_human",
       "Te_eV", "Te_VpVf_OML_eV", "Te_VpVf_planar_eV", "Te_check", "ne_m3", "ni_m3", "ni_over_ne",
-      "Vp", "Vp_dIdV", "Vp_intersection", "Vf", "Iis_A", "Ies_A", "flags"];
+      "Vp", "Vp_dIdV", "Vp_intersection", "Vp_agreement_pct", "Vp_check", "Vf", "Iis_A", "Ies_A", "flags"];
     const cell = (v) => {
       if (typeof v === "number") return Number.isFinite(v) ? (v !== 0 && Math.abs(v) < 1e-4 ? v.toExponential() : String(v)) : "nan";
       const s = String(v ?? "");
@@ -244,7 +244,7 @@
       const r = it.results || {};
       lines.push([it.name, it.param, it.status, it.status === "accepted" || it.status === "rejected" ? "yes" : "no",
         r.Te_eV, r.Te_VpVf_OML_eV, r.Te_VpVf_planar_eV, r.Te_check, r.ne_m3, r.ni_m3, r.ni_m3 / r.ne_m3,
-        r.Vp, r.Vp_dIdV, r.Vp_intersection, r.Vf, r.Iis_A, r.Ies_A, (it.flags || []).join("; ")].map(cell).join(","));
+        r.Vp, r.Vp_dIdV, r.Vp_intersection, r.Vp_agreement_pct, r.Vp_check, r.Vf, r.Iis_A, r.Ies_A, (it.flags || []).join("; ")].map(cell).join(","));
     }
     IV.ui.download(`batch_results_${new Date().toISOString().slice(0, 10)}.csv`, lines.join("\n") + "\n", "text/csv");
   }
@@ -340,7 +340,7 @@
     reviewBtn.disabled = !remaining;
     reviewBtn.textContent = remaining ? `Review next ▶ (${remaining} left)` : "All reviewed";
 
-    table.querySelector("thead").replaceChildren(el("tr", {}, ["#", "File", batch.paramName || "Parameter", "Status", "Te (eV)", "ne (m⁻³)", "ni/ne", "Vp (V)", "Vf (V)", ""]
+    table.querySelector("thead").replaceChildren(el("tr", {}, ["#", "File", batch.paramName || "Parameter", "Status", "Te (eV)", "ne (m⁻³)", "ni/ne", "Vp (V)", "ΔVp", "Vf (V)", ""]
       .map((h) => el("th", { text: h }))));
     tbody.replaceChildren(...batch.items.map((it, k) => {
       const r = it.results || {};
@@ -364,6 +364,9 @@
         el("td", { text: fmtE(r.ne_m3, 2) }),
         el("td", { text: fmtG(r.ni_m3 / r.ne_m3, 3) }),
         el("td", { text: fmtG(r.Vp, 4) }),
+        el("td", { text: Number.isFinite(r.Vp_agreement_pct) ? `${fmtG(r.Vp_agreement_pct, 2)} %` : "—",
+          title: "Vp from dI/dV vs from the fit intersection (should be within 5–10 %)",
+          class: r.Vp_check === "poor" ? "vp-poor" : "" }),
         el("td", { text: fmtG(r.Vf, 4) }),
         actions,
       ]);

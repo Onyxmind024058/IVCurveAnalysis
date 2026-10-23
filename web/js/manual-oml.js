@@ -331,21 +331,27 @@
     }
 
     // ----- Tab 6: results ----------------------------------------------------
-    const cols = ["Vp", "Vf", "Te_eV", "Te Vp−Vf OML", "Te Vp−Vf planar", "ne_m^-3", "Iis_A (at Vf)", "Ies_A"];
+    const cols = ["Vp", "Vp agreement", "Vf", "Te_eV", "Te Vp−Vf OML", "Te Vp−Vf planar", "ne_m^-3", "Iis_A (at Vf)", "Ies_A"];
     const tbody = el("tbody");
     const table = el("table.data", {}, [el("thead", {}, [el("tr", {}, cols.map((c) => el("th", { text: c })))]), tbody]);
     const teWarningLine = el("p.te-warning");
+    const vpWarningLine = el("p.te-warning");
     tabs.panels[5].append(
-      el("div", { style: "padding:14px;flex:1;overflow:auto" }, [table, teWarningLine]),
+      el("div", { style: "padding:14px;flex:1;overflow:auto" }, [table, vpWarningLine, teWarningLine]),
       el("div.controls", {}, [el("span.spacer"), nextBtn("Send results to main window and close", sendResults)]),
     );
 
     function updateResultsTable() {
       // cross-check of Te from the potential difference (same rule as the results cards)
       const t = N.teFromPotentials(s.Vp, s.Vf, ionMass);
-      tbody.replaceChildren(el("tr", {}, [s.Vp, s.Vf, s.Te_eV, t.Te_OML_eV, t.Te_planar_eV, s.ne_m3, s.Iis_A, s.Ies_A]
-        .map((x) => el("td", { text: fmtG(x) }))));
+      const agree = Number.isFinite(s.Te_eV) ? IV.ui.vpAgreementLabel(s.Vp1, s.Vp2) : "";
+      tbody.replaceChildren(el("tr", {}, [s.Vp, agree, s.Vf, s.Te_eV, t.Te_OML_eV, t.Te_planar_eV, s.ne_m3, s.Iis_A, s.Ies_A]
+        .map((x) => el("td", { text: typeof x === "string" ? x : fmtG(x) }))));
       teWarningLine.textContent = IV.ui.teWarning(s.Te_eV, t.Te_OML_eV, t.Te_planar_eV);
+      // the two Vp values should agree within 5–10 % (validation of the analysis)
+      const vw = Number.isFinite(s.Te_eV) ? IV.ui.vpWarning(s.Vp1, s.Vp2) : { text: "" };
+      vpWarningLine.textContent = vw.text;
+      vpWarningLine.classList.toggle("fair", vw.level === "fair");
     }
 
     function sendResults() {

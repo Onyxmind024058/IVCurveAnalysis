@@ -72,7 +72,7 @@
    * Synthetic Langmuir probe scans (Te = 3 eV, Vp = 10 V, cylindrical OML ion
    * branch) so the app can be explored without a measurement file.
    */
-  function exampleScans(nScans = 5, nPts = 500) {
+  function exampleScans(nScans = 5, nPts = 1500) {
     let seed = 12345;
     const rand = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
     const gauss = () => Math.sqrt(-2 * Math.log(rand() + 1e-12)) * Math.cos(2 * Math.PI * rand());
