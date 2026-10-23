@@ -232,5 +232,16 @@
     return api;
   }
 
-  IV.ui = { el, fmtG, fmtE, toast, download, openDialog, message, numberField, sliderField, checkField, selectField, tabs };
+  /** Warning text when the fitted Te disagrees with the Vp - Vf estimates, else "". */
+  function teWarning(teFit, teOML, tePlanar) {
+    const c = IV.num.teConsistency(teFit, teOML, tePlanar);
+    if (!c.checked || c.ok) return "";
+    return `⚠ Te from the fit (${fmtG(teFit, 3)} eV) differs by more than ${Math.round(c.limit * 100)} % from Te from Vp − Vf `
+      + `(${fmtG(Math.min(teOML, tePlanar), 3)}–${fmtG(Math.max(teOML, tePlanar), 3)} eV). `
+      + "Check Vp, Vf and the fit regions. RF pick-up on a probe without RF compensation pulls Vf negative, "
+      + "which makes the Vp − Vf value too high.";
+  }
+
+  IV.ui = {
+    teWarning, el, fmtG, fmtE, toast, download, openDialog, message, numberField, sliderField, checkField, selectField, tabs };
 })(window.IV = window.IV || {});

@@ -357,6 +357,48 @@
     return (Math.PI / (probeArea * E_CHARGE)) * Math.sqrt((mi * Math.abs(a)) / (2 * E_CHARGE));
   }
 
+  /**
+   * Te from the potential difference Vp - Vf (Maxwellian electrons, singly
+   * charged ions). At Vf the ion and electron currents cancel; with
+   * x = (Vp - Vf)/Te and mu = m_i/m_e:
+   *   cylindrical OML (thick sheath, same ion model as the I^2 fit):
+   *     (sqrt(2)/pi) sqrt(e dV/m_i) = sqrt(e Te/(2 pi m_e)) exp(-x)
+   *     =>  exp(-x) = (2/sqrt(pi)) sqrt(x/mu)      (x ~ 4.7 for Ar)
+   *   planar sheath with Bohm flux and 0.5 Te presheath (thin sheath):
+   *     x = 1/2 + 1/2 ln(mu / (2 pi))                (x ~ 5.2 for Ar)
+   * Returns the factors x and Te = dV / x for both; NaN if Vp <= Vf.
+   */
+  function teFromPotentials(Vp, Vf, massAmu) {
+    const mu = (massAmu * AMU) / M_E;
+    const planar = 0.5 + 0.5 * Math.log(mu / (2 * Math.PI));
+    // solve x + ln(2/sqrt(pi)) + 0.5 ln(x/mu) = 0 by Newton, starting from the planar value
+    let x = planar;
+    for (let k = 0; k < 50; k++) {
+      const g = x + Math.log(2 / Math.sqrt(Math.PI)) + 0.5 * Math.log(x / mu);
+      const step = g / (1 + 0.5 / x);
+      x -= step;
+      if (Math.abs(step) < 1e-12) break;
+    }
+    const dV = Vp - Vf;
+    const ok = Number.isFinite(dV) && dV > 0 && massAmu > 0;
+    return {
+      factorOML: x, factorPlanar: planar,
+      Te_OML_eV: ok ? dV / x : NaN,
+      Te_planar_eV: ok ? dV / planar : NaN,
+    };
+  }
+
+  /**
+   * Cross-check of a fitted Te against the Vp - Vf estimates: the fitted value
+   * should lie in [min(OML, planar) * (1 - limit), max(OML, planar) * (1 + limit)].
+   */
+  function teConsistency(teFit, teOML, tePlanar, limit = 0.3) {
+    if (![teFit, teOML, tePlanar].every(Number.isFinite)) return { checked: false, ok: true };
+    const lo = Math.min(teOML, tePlanar) * (1 - limit);
+    const hi = Math.max(teOML, tePlanar) * (1 + limit);
+    return { checked: true, ok: teFit >= lo && teFit <= hi, lo, hi, limit };
+  }
+
   // ---------------------------------------------------------------------------
   // Automatic first-pass OML analysis
   // ---------------------------------------------------------------------------
@@ -629,7 +671,7 @@
   }
 
   const api = {
-    E_CHARGE, M_E, AMU, ION_SPECIES, ionDensityOML,
+    E_CHARGE, M_E, AMU, ION_SPECIES, ionDensityOML, teFromPotentials, teConsistency,
     argsort, take, sign, min, max, nanmin, nanmax, argmax, nanargmax, nanmedian, nanmean,
     linspace, interp, gradient, polyfit, polyval, lstsq,
     makeOdd, movingAverage, polynomialSmooth, smoothSignal,
