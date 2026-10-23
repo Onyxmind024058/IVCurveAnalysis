@@ -12,7 +12,9 @@
 "use strict";
 
 // Change only if the list of files below changes shape; contents refresh by themselves.
-const CACHE = "ivcurve-app-v1";
+// The beta in /web-beta/ shares this origin, so only caches with our own prefix are touched.
+const CACHE_PREFIX = "ivcurve-app-";
+const CACHE = `${CACHE_PREFIX}v1`;
 const NETWORK_TIMEOUT_MS = 4000;
 
 const APP_FILES = [
@@ -50,7 +52,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k.startsWith("ivcurve-") && k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(keys.filter((k) => k.startsWith(CACHE_PREFIX) && k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim()),
   );
 });
