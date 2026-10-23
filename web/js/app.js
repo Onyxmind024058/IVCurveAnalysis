@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.3.1";
+  const APP_VERSION = "2.3.2";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -84,6 +84,10 @@
     r.Te_VpVf_OML_eV = t.Te_OML_eV;
     r.Te_VpVf_planar_eV = t.Te_planar_eV;
     r.Te_check = teCheck(r);
+    // validation of a manual analysis: both Vp values within 5–10 %
+    const va = N.vpAgreement(r.Vp_dIdV, r.Vp_intersection);
+    r.Vp_agreement_pct = va.checked ? va.pct : NaN;
+    r.Vp_check = va.checked ? va.level : "n/a";
     return r;
   }
 
@@ -94,6 +98,15 @@
   }
 
   const teWarn = (r) => IV.ui.teWarning(r.Te_eV, r.Te_VpVf_OML_eV, r.Te_VpVf_planar_eV);
+
+  /** Red warning text (Vp disagreement > 10 %, Te mismatch) for a manual result. */
+  const manualWarn = (r) => [IV.ui.vpWarning(r.Vp_dIdV, r.Vp_intersection), { text: teWarn(r), level: "poor" }]
+    .filter((w) => w.level === "poor" && w.text).map((w) => w.text).join("\n\n");
+  /** Note under a manual result; mentions an acceptable (5–10 %) Vp difference. */
+  const manualNote = (r) => {
+    const w = IV.ui.vpWarning(r.Vp_dIdV, r.Vp_intersection);
+    return ["Ion current fit: Iion² = a·V + b.", w.level === "fair" ? w.text : ""].filter(Boolean).join("\n");
+  };
 
   const tePotentialRows = (r) => [
     ["Te from Vp − Vf (cyl. OML)", `${fmtG(r.Te_VpVf_OML_eV, 4)} eV`],
@@ -399,6 +412,7 @@
             ["Floating potential Vf", fmtG(r.Vf, 5)],
             ["Vp from dI/dV", fmtG(r.Vp_dIdV, 5)],
             ["Vp from log-fit intersection", fmtG(r.Vp_intersection, 5)],
+            ["Vp agreement (dI/dV vs intersection)", IV.ui.vpAgreementLabel(r.Vp_dIdV, r.Vp_intersection)],
             ["Final plasma potential Vp", fmtG(r.Vp, 5)],
             ["Electron temperature Te", `${fmtG(r.Te_eV, 5)} eV`],
             ...tePotentialRows(r),
@@ -408,7 +422,7 @@
             ["Electron density ne", `${fmtE(r.ne_m3, 5)} m⁻³`],
             ["Ion fit Iion² slope a", `${fmtE(r.ion_i2_a)} A²/V`],
             ["Ion fit Iion² offset b", `${fmtE(r.ion_i2_b)} A²`],
-          ], "Ion current fit: Iion² = a·V + b.", undefined, teWarn(r));
+          ], manualNote(r), undefined, manualWarn(r));
           status("Manual OML results received");
         },
       });
@@ -642,6 +656,13 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.3.2",
+      title: "Vp check",
+      items: [
+        "Validation of the manual analysis: Vp from the dI/dV peak and Vp from the fit intersection should agree within 5–10 % of Vp. The agreement is shown in the results (✓ ≤ 5 %, acceptable 5–10 %), a red warning appears above 10 %, and it is exported (Vp_agreement_pct, Vp_check). Not checked when Vp is within 1 V of 0 V.",
+      ],
+    },
     {
       version: "2.3.1",
       title: "Fix",

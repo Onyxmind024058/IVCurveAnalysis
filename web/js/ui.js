@@ -242,6 +242,25 @@
       + "which makes the Vp − Vf value too high.";
   }
 
+  /** Short label for the Vp agreement, e.g. "3.2 % ✓". */
+  function vpAgreementLabel(vpDidv, vpIntersection) {
+    const c = IV.num.vpAgreement(vpDidv, vpIntersection);
+    if (!c.checked) return c.reason === "near-zero" ? `Δ ${fmtG(c.diff, 3)} V (n/a near 0 V)` : "n/a";
+    const mark = { good: "✓ good", fair: "acceptable", poor: "✗ too large" }[c.level];
+    return `${fmtG(c.pct, 2)} % ${mark}`;
+  }
+
+  /** Text when the two Vp values disagree: { text, level } with level "fair" or "poor"; text "" when fine. */
+  function vpWarning(vpDidv, vpIntersection) {
+    const c = IV.num.vpAgreement(vpDidv, vpIntersection);
+    if (!c.checked || c.level === "good") return { text: "", level: c.level || "" };
+    const lim = IV.num.VP_AGREEMENT;
+    const what = `Vp from dI/dV (${fmtG(vpDidv, 4)} V) and from the fit intersection (${fmtG(vpIntersection, 4)} V) differ by ${fmtG(c.pct, 2)} %`;
+    if (c.level === "fair") return { level: "fair", text: `${what} — acceptable (${lim.good}–${lim.fair} %).` };
+    return { level: "poor", text: `⚠ ${what}, more than ${lim.fair} %. Check the dI/dV smoothing, the Vp line and the transition/saturation regions.` };
+  }
+
   IV.ui = {
+    vpAgreementLabel, vpWarning,
     teWarning, el, fmtG, fmtE, toast, download, openDialog, message, numberField, sliderField, checkField, selectField, tabs };
 })(window.IV = window.IV || {});

@@ -78,6 +78,14 @@ test("Te consistency check flags a mismatch beyond 30 %", () => {
   assert.equal(N.teConsistency(NaN, 2.8, 2.5).checked, false);
 });
 
+test("Vp agreement levels and the near-0 V guard", () => {
+  assert.equal(N.vpAgreement(9.6, 10).level, "good");
+  assert.equal(N.vpAgreement(9.2, 10).level, "fair");
+  assert.equal(N.vpAgreement(8.8, 10).level, "poor");
+  assert.equal(N.vpAgreement(-0.3, 0.5).checked, false);
+  assert.equal(N.vpAgreement(NaN, 10).checked, false);
+});
+
 test("Iis is the ion current at Vf", () => {
   const c = omlCurve({ sigma: 0 });
   const r = N.analyseOML(c.V, c.I, AREA, 0.2, 5);
