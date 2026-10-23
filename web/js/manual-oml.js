@@ -11,7 +11,7 @@
    * params (optional): settings returned by an earlier run (results.params);
    * the window then replays those steps and opens on the last one reached.
    */
-  function openManualOML({ V, I, probeArea, label = "Mean curve", params, onResults }) {
+  function openManualOML({ V, I, probeArea, ionMass, label = "Mean curve", params, onResults }) {
     const { V: v, I: cur } = N.sortedCurve(V, I);
     const n = v.length;
     const vMin = N.nanmin(v), vMax = N.nanmax(v);
@@ -331,16 +331,21 @@
     }
 
     // ----- Tab 6: results ----------------------------------------------------
-    const cols = ["Vp", "Vf", "Te_eV", "ne_m^-3", "Iis_A (at Vf)", "Ies_A"];
+    const cols = ["Vp", "Vf", "Te_eV", "Te Vp−Vf OML", "Te Vp−Vf planar", "ne_m^-3", "Iis_A (at Vf)", "Ies_A"];
     const tbody = el("tbody");
     const table = el("table.data", {}, [el("thead", {}, [el("tr", {}, cols.map((c) => el("th", { text: c })))]), tbody]);
+    const teWarningLine = el("p.te-warning");
     tabs.panels[5].append(
-      el("div", { style: "padding:14px;flex:1;overflow:auto" }, [table]),
+      el("div", { style: "padding:14px;flex:1;overflow:auto" }, [table, teWarningLine]),
       el("div.controls", {}, [el("span.spacer"), nextBtn("Send results to main window and close", sendResults)]),
     );
 
     function updateResultsTable() {
-      tbody.replaceChildren(el("tr", {}, [s.Vp, s.Vf, s.Te_eV, s.ne_m3, s.Iis_A, s.Ies_A].map((x) => el("td", { text: fmtG(x) }))));
+      // cross-check of Te from the potential difference (same rule as the results cards)
+      const t = N.teFromPotentials(s.Vp, s.Vf, ionMass);
+      tbody.replaceChildren(el("tr", {}, [s.Vp, s.Vf, s.Te_eV, t.Te_OML_eV, t.Te_planar_eV, s.ne_m3, s.Iis_A, s.Ies_A]
+        .map((x) => el("td", { text: fmtG(x) }))));
+      teWarningLine.textContent = IV.ui.teWarning(s.Te_eV, t.Te_OML_eV, t.Te_planar_eV);
     }
 
     function sendResults() {

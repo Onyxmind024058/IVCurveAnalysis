@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.2.1";
+  const APP_VERSION = "2.3.0";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -75,13 +75,30 @@
     if (!custom) $("ionMass").value = N.ION_SPECIES[$("ionGas").value];
   }
 
-  /** Adds n_i (from the slope of the I^2 fit) to an OML result. */
-  function addIonDensity(r, area) {
+  /** Adds n_i (from the slope of the I^2 fit) and Te from Vp - Vf to an OML result. */
+  function addDerived(r, area) {
     r.ion_species = $("ionGas").value;
     r.ion_mass_amu = numberValue("ionMass");
     r.ni_m3 = N.ionDensityOML(r.ion_i2_a, area, r.ion_mass_amu);
+    const t = N.teFromPotentials(r.Vp, r.Vf, r.ion_mass_amu);
+    r.Te_VpVf_OML_eV = t.Te_OML_eV;
+    r.Te_VpVf_planar_eV = t.Te_planar_eV;
+    r.Te_check = teCheck(r);
     return r;
   }
+
+  /** "ok", "mismatch" or "n/a" — exported with the results. */
+  function teCheck(r) {
+    const c = N.teConsistency(r.Te_eV, r.Te_VpVf_OML_eV, r.Te_VpVf_planar_eV);
+    return c.checked ? (c.ok ? "ok" : "mismatch") : "n/a";
+  }
+
+  const teWarn = (r) => IV.ui.teWarning(r.Te_eV, r.Te_VpVf_OML_eV, r.Te_VpVf_planar_eV);
+
+  const tePotentialRows = (r) => [
+    ["Te from Vp − Vf (cyl. OML)", `${fmtG(r.Te_VpVf_OML_eV, 4)} eV`],
+    ["Te from Vp − Vf (planar)", `${fmtG(r.Te_VpVf_planar_eV, 4)} eV`],
+  ];
 
   const ionRows = (r) => [
     [`Ion density ni (OML, ${r.ion_species})`, `${fmtE(r.ni_m3, 5)} m⁻³`],
@@ -123,15 +140,16 @@
     $("log").scrollTop = $("log").scrollHeight;
   }
 
-  function resultCard(title, rows, note, time) {
+  function resultCard(title, rows, note, time, warning) {
     $("log").querySelector(".empty-state")?.remove();
     time = time || new Date().toLocaleString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    state.cards.push({ title, rows, note, time });
+    state.cards.push({ title, rows, note, time, warning });
     const dl = el("dl");
     for (const [k, v] of rows) dl.append(el("dt", { text: k }), el("dd", { text: v }));
     const card = el("section.result-card", {}, [
       el("header", {}, [el("h3", { text: title }), el("time", { text: time })]),
       dl,
+      warning ? el("p.warn", { text: warning }) : null,
       note ? el("p", { text: note }) : null,
     ]);
     $("log").append(card);
@@ -337,7 +355,7 @@
     try {
       const { xkey, x, imean } = meanCurve();
       const area = probeArea();
-      const r = addIonDensity(N.analyseOML(x, imean, area, numberValue("ionFraction"), numberValue("smoothWindow")), area);
+      const r = addDerived(N.analyseOML(x, imean, area, numberValue("ionFraction"), numberValue("smoothWindow")), area);
       setOmlResults(r);
       resultCard("Automatic OML-style analysis", [
         ["X axis used", xkey],
@@ -345,13 +363,14 @@
         ["Floating potential Vf", fmtG(r.Vf, 5)],
         ["Plasma potential Vp", fmtG(r.Vp, 5)],
         ["Electron temperature Te", `${fmtG(r.Te_eV, 5)} eV`],
+        ...tePotentialRows(r),
         ["Electron saturation current Ies", `${fmtE(r.Ies_A, 5)} A`],
         ["Electron density ne", `${fmtE(r.ne_m3, 5)} m⁻³`],
         ["Ion current Iis (at Vf)", `${fmtE(r.Iis_A, 5)} A`],
         ...ionRows(r),
         ["Ion fit Iion² slope a", `${fmtE(r.ion_i2_a)} A²/V`],
         ["Ion fit Iion² offset b", `${fmtE(r.ion_i2_b)} A²`],
-      ], "Ion current fit: Iion² = a·V + b. First-pass estimate; use manual mode to check fit regions.");
+      ], "Ion current fit: Iion² = a·V + b. First-pass estimate; use manual mode to check fit regions.", undefined, teWarn(r));
       status("Automatic OML analysis done");
     } catch (e) {
       IV.ui.message("Analysis failed", IV.escape(e.message));
@@ -370,11 +389,11 @@
       const { xkey, x, imean } = meanCurve();
       const area = probeArea();
       IV.openManualOML({
-        V: x, I: imean, probeArea: area, label: `Manual OML on averaged I-V (${xkey})`,
+        V: x, I: imean, probeArea: area, ionMass: numberValue("ionMass"), label: `Manual OML on averaged I-V (${xkey})`,
         params: state.params.manual,
         onResults(r) {
           state.params.manual = r.params;
-          addIonDensity(r, area);
+          addDerived(r, area);
           setOmlResults(r);
           resultCard("Manual OML analysis", [
             ["Floating potential Vf", fmtG(r.Vf, 5)],
@@ -382,13 +401,14 @@
             ["Vp from log-fit intersection", fmtG(r.Vp_intersection, 5)],
             ["Final plasma potential Vp", fmtG(r.Vp, 5)],
             ["Electron temperature Te", `${fmtG(r.Te_eV, 5)} eV`],
+            ...tePotentialRows(r),
             ["Ion current Iis (at Vf)", `${fmtE(r.Iis_A, 5)} A`],
             ...ionRows(r),
             ["Electron saturation current Ies", `${fmtE(r.Ies_A, 5)} A`],
             ["Electron density ne", `${fmtE(r.ne_m3, 5)} m⁻³`],
             ["Ion fit Iion² slope a", `${fmtE(r.ion_i2_a)} A²/V`],
             ["Ion fit Iion² offset b", `${fmtE(r.ion_i2_b)} A²`],
-          ], "Ion current fit: Iion² = a·V + b.");
+          ], "Ion current fit: Iion² = a·V + b.", undefined, teWarn(r));
           status("Manual OML results received");
         },
       });
@@ -428,14 +448,19 @@
         params: state.params.epfl,
         onResults(r) {
           state.params.epfl = r.params;
+          const t = N.teFromPotentials(r.Vp, r.Vf, numberValue("ionMass"));
+          r.Te_VpVf_OML_eV = t.Te_OML_eV;
+          r.Te_VpVf_planar_eV = t.Te_planar_eV;
+          r.Te_check = teCheck(r);
           state.lastResults = r;
           resultCard("EPFL two-fluid model", [
             ["Fit mode", r.fit_mode],
             ["Floating potential Vf", fmtG(r.Vf, 5)],
             ["Plasma potential Vp", fmtG(r.Vp, 5)],
             ["Electron temperature Te", `${fmtG(r.Te_eV, 5)} eV`],
+            ...tePotentialRows(r),
             ["Electron density ne", `${fmtE(r.ne_m3, 5)} m⁻³`],
-          ]);
+          ], undefined, undefined, teWarn(r));
           status("EPFL two-fluid results received");
         },
       });
@@ -527,7 +552,7 @@
     state.omlResults = session.oml_results ? revive(session.oml_results) : null;
     state.lastResults = session.last_results === "oml" ? state.omlResults
       : (session.last_results ? revive(session.last_results) : null);
-    for (const card of session.cards || []) resultCard(card.title, card.rows, card.note, card.time);
+    for (const card of session.cards || []) resultCard(card.title, card.rows, card.note, card.time, card.warning);
 
     log(`Opened saved analysis ${fileName} (saved ${new Date(session.saved_at).toLocaleString()} with app v${session.app_version}).`);
     status(`Saved analysis restored — ${scans.length} scan${scans.length === 1 ? "" : "s"}`);
@@ -617,6 +642,15 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.3.0",
+      title: "Te from Vp − Vf",
+      items: [
+        "Cross-check of Te from the potential difference Vp − Vf, shown next to Te in the automatic, manual and EPFL results: once for a cylindrical probe in OML theory (thick sheath, same ion model as the ion fit; factor ≈ 4.7 for Ar) and once for a planar sheath with Bohm flux (thin sheath; factor ≈ 5.2 for Ar). It uses the ion species from Probe / OML settings.",
+        "Red warning when the fitted Te is more than 30 % outside the Vp − Vf range (also on the Results tab of the manual analysis).",
+        "Automatic physics tests (web/tests) and a README section on installing the app."
+      ],
+    },
     {
       version: "2.2.1",
       title: "Fix",

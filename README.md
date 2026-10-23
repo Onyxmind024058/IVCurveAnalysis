@@ -1,31 +1,67 @@
 # Langmuir Probe IV Analyser UB
 
+### ▶ Open the app: **[onyxmind024058.github.io/IVCurveAnalysis/web/](https://onyxmind024058.github.io/IVCurveAnalysis/web/)**
+
 A browser application for loading Langmuir probe measurements (`.lda` or CSV files), plotting individual and averaged I–V curves, and extracting plasma parameters using automatic OML-style analysis, manual OML analysis, EEDF/EEPF calculation, and an EPFL two-fluid model.
 
-The program is designed for interactive analysis of Langmuir probe measurements, especially when automatic fitting is not sufficient and the user needs to manually select fit regions.
+The program is designed for interactive analysis of Langmuir probe measurements, especially when automatic fitting is not sufficient and the user needs to manually select fit regions. It runs entirely in your browser: measurement files are read locally and **never uploaded**.
 
 > The original Python/PySide6 desktop application is **no longer maintained**. It is kept for reference in [`archive/python-desktop/`](archive/python-desktop/). New features and fixes go into the browser version only.
 
-### Browser version (no installation)
+## Getting started
 
-The app lives in the `web/` folder and runs entirely in the browser, in the spirit of ImageJ.js:
+- **Online:** open the link above in a recent browser (Chrome, Edge, Firefox or Safari). Nothing to install.
+- **Without internet / from a copy:** download the repository and double-click `web/index.html`. All libraries are bundled, so this works offline too (but cannot be installed as an app, see below).
+- Try it with **Example data** (synthetic curves with Te = 3 eV, Vp = 10 V) before opening your own files.
 
-- **Run it:** use the GitHub Pages site, or download the repository and open `web/index.html` in any modern browser (double-click it). No Python, no install, no internet required, as all libraries are bundled.
-- **Private:** `.lda` files are read locally by the browser and never uploaded.
+## Install as an app (PWA)
+
+From the link above, the analyser can be installed like a normal program (a *Progressive Web App*). It then gets its own icon and window, **works without internet**, and updates itself.
+
+| Browser / system | How to install |
+|---|---|
+| **Chrome or Edge** (Windows, macOS, Linux, ChromeOS) | Click **Install app** in the app's toolbar, or the install icon (a monitor with a down arrow) at the right end of the address bar, then **Install**. Edge also offers *⋯ → Apps → Install this site as an app*. |
+| **Safari on macOS** (Sonoma 14 or newer) | Menu **File → Add to Dock…** (or the Share button → *Add to Dock*). |
+| **Safari on iPhone / iPad** | Share button → **Add to Home Screen** → *Add*. |
+| **Chrome on Android** | Menu **⋮ → Install app** (or *Add to Home screen*). |
+| **Firefox** (desktop) | Firefox cannot install web apps. Use the page in a tab: it still works offline after the first visit. |
+
+**After installing**
+
+- Start it from the Start menu, Dock, Launchpad, home screen or desktop like any program.
+- **Offline:** the first visit saves a copy of the app (about 1.7 MB) on your computer. Afterwards it opens without internet; the status bar then shows *Offline — using the saved copy*.
+- **Updates:** whenever you open it with internet, the newest version is loaded automatically. The *What's new* window shows what changed.
+- **Open files directly** (Chrome/Edge on desktop): right-click a `.lda`, `.csv` or `.ivsession` file → **Open with → IV Analyser**.
+- **Uninstall:** Chrome/Edge: open the app → *⋮* (or *⋯*) menu → *Uninstall*. macOS: remove it from the Dock and from *Applications*. iPhone/iPad/Android: long-press the icon → *Remove*.
+
+## What the app does
+
+The app lives in the `web/` folder, in the spirit of ImageJ.js:
+
+- **Data files:** opens `.lda` files and CSV/text files. In `.lda` files, `RefData` is optional; when it is empty, `VData` is used as x axis. The CSV importer detects the separator (comma, semicolon, tab or spaces) and decimal commas, skips header/metadata lines, and lets you pick the voltage column, the current column(s) (one scan each) and the current unit (A, mA, µA, nA), with a live preview. Files exported by this app can be opened again.
+- **Data range:** in the *Data range* panel, the curve can be reduced before any analysis: skip the first/last N points of every sweep (e.g. start-up transients) and/or keep only a voltage window, set by typing or by dragging the lines on the main plot. All analyses and exports use the reduced curve.
+- **Ion density:** nᵢ is calculated from the slope of the I² fit (OML theory for a cylindrical probe, nᵢ = (π/(A·e))·√(mᵢ·|a|/(2e))) for the ion species chosen in *Probe / OML settings*, and shown with nᵢ/nₑ.
+- **Te from Vp − Vf:** a cross-check of Te from the potential difference, shown next to the fitted Te in every result: for a cylindrical probe in OML theory (e^(−x) = (2/√π)·√(x·mₑ/mᵢ) with x = (Vp − Vf)/Te; x ≈ 4.7 for Ar) and for a planar sheath with Bohm flux (x = ½ + ½·ln(mᵢ/(2π mₑ)); x ≈ 5.2 for Ar). The two bracket the usual thick/thin-sheath cases. If the fitted Te lies more than 30 % outside this range, the result shows a red warning.
+  - *How to read it:* the method assumes Maxwellian electrons and a clean floating potential. With RF plasmas and a probe **without RF compensation**, Vf is pulled negative, so Te from Vp − Vf comes out **too high**. A mismatch is a reason to look again at Vp, Vf, the fit regions and the sheath regime.
+- **Saved analyses:** *Save / Export → Save analysis* (Ctrl+S) writes one `.ivsession` file with the data, settings, data range, fit regions of every window and the results. Opening it (like a data file) restores everything; the Manual OML window reopens on the step where you stopped.
+- **Theme:** University of Basel light/dark theme (switch in the top-right corner).
+- **What's new:** the *What's new* button lists the changes of each version; it opens by itself once after an update.
 - **Analysis core:** `web/js/numerics.js`, ported from the Python app (`archive/python-desktop/main.py`), with these corrections (v2.0.0):
   - EEDF and EEPF were swapped. The Druyvesteyn expression `2·sqrt(2·mₑ)/(e³·A) · d²Iₑ/dV²` is the EEPF; EEDF = EEPF·sqrt(ε). Both are shown per eV (m⁻³ eV⁻¹, m⁻³ eV⁻³ᐟ²), and the EEPF window shows the density ∫EEDF dε next to the OML ne as a check.
   - Iis is the ion current from the I² fit evaluated at **Vf** (it was evaluated at 0 V).
   - EPFL two-fluid: the model is written relative to Vp so the exponentials cannot overflow.
   - Scans are averaged on an evenly spaced grid over their common voltage range; up/down (triangular) sweeps are split into separate branches.
   - Other fixes: EEDF is smoothed before clipping negatives, rebinning keeps the last point, smoothing windows are always odd, and corrupt `.lda` files give a clear error.
-- **Data files:** opens `.lda` files and CSV/text files. The CSV importer detects the separator (comma, semicolon, tab or spaces) and decimal commas, skips header/metadata lines, and lets you pick the voltage column, the current column(s) (one scan each) and the current unit (A, mA, µA, nA), with a live preview. Files exported by this app can be opened again.
-- **Data range:** in the *Data range* panel, the curve can be reduced before any analysis: skip the first/last N points of every sweep (e.g. start-up transients) and/or keep only a voltage window, set by typing or by dragging the lines on the main plot. All analyses and exports use the reduced curve.
-- **Theme:** University of Basel light/dark theme (switch in the top-right corner).
-- **Host it:** the folder is static, so it can be served from GitHub Pages or any web server.
-- **Ion density:** nᵢ is calculated from the slope of the I² fit (OML theory for a cylindrical probe, nᵢ = (π/(A·e))·√(mᵢ·|a|/(2e))) for the ion species chosen in *Probe / OML settings*, and shown with nᵢ/nₑ.
-- **Saved analyses:** *Save / Export → Save analysis* (Ctrl+S) writes one `.ivsession` file with the data, settings, data range, fit regions of every window and the results. Opening it (like a data file) restores everything; the Manual OML window reopens on the step where you stopped.
-- **Install / offline:** from the GitHub Pages site the analyser can be installed as an app (Chrome/Edge: *Install app* button or the icon in the address bar; Safari: Share → *Add to Dock* / *Add to Home Screen*). It then has its own icon and window and works without internet. When online, the latest version is loaded automatically. In Chrome/Edge the installed app can also open `.lda`/`.csv` files via *Open with*. (Opening `web/index.html` from disk works as before, but cannot be installed.)
-- **What's new:** the *What's new* button lists the changes of each version; it opens by itself once after an update.
+
+## Checking the physics (automatic tests)
+
+`web/tests/numerics.test.js` checks the analysis code on synthetic curves with known answers (Te, nₑ, nᵢ, Iis at Vf, EEDF density, Te from Vp − Vf, averaging, EPFL). With [Node.js](https://nodejs.org) 18 or newer, from the repository folder:
+
+```bash
+node --test web/tests/numerics.test.js
+```
+
+All tests should report `ok`. Run them after every change to the analysis code.
 
 ---
 
