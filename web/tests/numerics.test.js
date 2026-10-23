@@ -78,12 +78,18 @@ test("Te consistency check flags a mismatch beyond 30 %", () => {
   assert.equal(N.teConsistency(NaN, 2.8, 2.5).checked, false);
 });
 
-test("Vp agreement levels and the near-0 V guard", () => {
-  assert.equal(N.vpAgreement(9.6, 10).level, "good");
-  assert.equal(N.vpAgreement(9.2, 10).level, "fair");
-  assert.equal(N.vpAgreement(8.8, 10).level, "poor");
-  assert.equal(N.vpAgreement(-0.3, 0.5).checked, false);
-  assert.equal(N.vpAgreement(NaN, 10).checked, false);
+test("Vp check: dI/dV vs intersection in volts, with the Te cross-check between 2 and 5 V", () => {
+  assert.equal(N.vpCheck(9.0, 10.5, 3, 3, 3).level, "good");                 // 1.5 V
+  assert.equal(N.vpCheck(7.0, 10.5, 3.0, 2.9, 2.6).level, "ok");             // 3.5 V, Te confirmed
+  const mismatch = N.vpCheck(7.0, 10.5, 5.0, 2.9, 2.6);                       // 3.5 V, Te not confirmed
+  assert.equal(mismatch.level, "review");
+  assert.equal(mismatch.reason, "te-mismatch");
+  assert.equal(N.vpCheck(7.0, 10.5, 3.0, NaN, NaN).reason, "no-te-check");    // 3.5 V, nothing to confirm with
+  const large = N.vpCheck(4.0, 10.0, 3.0, 2.9, 2.6);                          // 6 V
+  assert.equal(large.level, "review");
+  assert.equal(large.reason, "large");
+  assert.ok(Math.abs(N.vpCheck(-0.3, 0.5, 3, 3, 3).diff - 0.8) < 1e-12);     // works near 0 V too
+  assert.equal(N.vpCheck(NaN, 10, 3, 3, 3).checked, false);
 });
 
 test("Iis is the ion current at Vf", () => {

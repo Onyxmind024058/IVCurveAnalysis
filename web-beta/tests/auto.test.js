@@ -31,10 +31,9 @@ const derived = (r) => {
   return { ni_m3: N.ionDensityOML(r.ion_i2_a, AREA, AR), Te_VpVf_OML_eV: t.Te_OML_eV, Te_VpVf_planar_eV: t.Te_planar_eV };
 };
 
-test("proposals recover Te on clean, finely sampled curves and raise no flags", () => {
-  // fine voltage steps (~0.04 V): the dI/dV peak and the fit intersection agree within 10 %
+test("proposals recover Te on clean curves and raise no flags", () => {
   for (const [Te, vmin] of [[1.5, -60], [3, -60], [6, -80]]) {
-    const c = curve({ Te, vmin, npts: 2000 });
+    const c = curve({ Te, vmin });
     const { params, results } = A.proposeOML(c.V, c.I, AREA);
     assert.ok(rel(results.Te_eV, Te) < 0.03, `Te ${results.Te_eV} for ${Te}`);
     assert.equal(params.reached, 5);
@@ -50,17 +49,13 @@ test("runOMLSteps reproduces a proposal from its saved params", () => {
   for (const k of ["Te_eV", "Vp", "Vf", "ne_m3", "Iis_A", "Ies_A"]) assert.ok(rel(again[k], results[k]) < 1e-12, k);
 });
 
-test("Vp agreement: dI/dV vs intersection within 5–10 % of Vp", () => {
-  assert.equal(N.vpAgreement(9.8, 10.0).level, "good");     // 2 %
-  assert.equal(N.vpAgreement(9.3, 10.0).level, "fair");     // 7.3 %
-  assert.equal(N.vpAgreement(8.5, 10.0).level, "poor");     // 16 %
-  assert.equal(N.vpAgreement(0.2, 0.4).checked, false);     // near 0 V: no percentage
-  const r = { Te_eV: 3, Vp_dIdV: 8.5, Vp_intersection: 10, diag: { r2Trans: 1, r2Ion: 1, nSat: 20, satSlope: 0, transSlope: 1, vMin: -60, vMax: 20 } };
-  assert.ok(A.qualityFlags(r).some((f) => /differ by 16\.2 %/.test(f)), "a 16 % difference is flagged");
-  // coarse voltage steps shift the smoothed dI/dV peak low: flagged for review
-  const coarse = curve({ Te: 6, vmin: -80, npts: 800 });
-  const rc = A.proposeOML(coarse.V, coarse.I, AREA).results;
-  assert.ok(A.qualityFlags(rc, derived(rc)).some((f) => /Vp from dI\/dV/.test(f)));
+test("Vp check flags: more than 5 V, or 2–5 V without Te confirmation", () => {
+  const diag = { r2Trans: 1, r2Ion: 1, nSat: 20, satSlope: 0, transSlope: 1, vMin: -60, vMax: 20 };
+  const flagged = (r, extra) => A.qualityFlags({ ...r, diag }, extra).some((f) => /Vp from dI\/dV/.test(f));
+  assert.equal(flagged({ Te_eV: 3, Vp_dIdV: 8.5, Vp_intersection: 10 }, {}), false);                                         // 1.5 V
+  assert.equal(flagged({ Te_eV: 3, Vp_dIdV: 6.5, Vp_intersection: 10 }, { Te_VpVf_OML_eV: 2.9, Te_VpVf_planar_eV: 2.6 }), false); // 3.5 V, confirmed
+  assert.equal(flagged({ Te_eV: 5, Vp_dIdV: 6.5, Vp_intersection: 10 }, { Te_VpVf_OML_eV: 2.9, Te_VpVf_planar_eV: 2.6 }), true);  // 3.5 V, not confirmed
+  assert.equal(flagged({ Te_eV: 3, Vp_dIdV: 3.5, Vp_intersection: 10 }, { Te_VpVf_OML_eV: 2.9, Te_VpVf_planar_eV: 2.6 }), true);  // 6.5 V
 });
 
 test("problem curves are flagged", () => {

@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.4.0-beta.3";
+  const APP_VERSION = "2.4.0-beta.4";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -84,10 +84,10 @@
     r.Te_VpVf_OML_eV = t.Te_OML_eV;
     r.Te_VpVf_planar_eV = t.Te_planar_eV;
     r.Te_check = teCheck(r);
-    // validation of a manual analysis: both Vp values within 5–10 %
-    const va = N.vpAgreement(r.Vp_dIdV, r.Vp_intersection);
-    r.Vp_agreement_pct = va.checked ? va.pct : NaN;
-    r.Vp_check = va.checked ? va.level : "n/a";
+    // validation of a manual analysis: the two Vp values within 2 V, or 5 V with a Te cross-check
+    const vc = N.vpCheck(r.Vp_dIdV, r.Vp_intersection, r.Te_eV, r.Te_VpVf_OML_eV, r.Te_VpVf_planar_eV);
+    r.Vp_difference_V = vc.checked ? vc.diff : NaN;
+    r.Vp_check = vc.checked ? vc.level : "n/a";
     return r;
   }
 
@@ -99,14 +99,11 @@
 
   const teWarn = (r) => IV.ui.teWarning(r.Te_eV, r.Te_VpVf_OML_eV, r.Te_VpVf_planar_eV);
 
-  /** Red warning text (Vp disagreement > 10 %, Te mismatch) for a manual result. */
-  const manualWarn = (r) => [IV.ui.vpWarning(r.Vp_dIdV, r.Vp_intersection), { text: teWarn(r), level: "poor" }]
-    .filter((w) => w.level === "poor" && w.text).map((w) => w.text).join("\n\n");
-  /** Note under a manual result; mentions an acceptable (5–10 %) Vp difference. */
-  const manualNote = (r) => {
-    const w = IV.ui.vpWarning(r.Vp_dIdV, r.Vp_intersection);
-    return ["Ion current fit: Iion² = a·V + b.", w.level === "fair" ? w.text : ""].filter(Boolean).join("\n");
-  };
+  const vpInfo = (r) => IV.ui.vpCheckInfo(r.Vp_dIdV, r.Vp_intersection, r.Te_eV, r.Te_VpVf_OML_eV, r.Te_VpVf_planar_eV);
+  /** Red warning text (Vp check says review, Te mismatch) for a manual result. */
+  const manualWarn = (r) => [vpInfo(r).level === "review" ? vpInfo(r).text : "", teWarn(r)].filter(Boolean).join("\n\n");
+  /** Note under a manual result; says when a 2–5 V Vp difference was confirmed by the Te cross-check. */
+  const manualNote = (r) => ["Ion current fit: Iion² = a·V + b.", vpInfo(r).level === "ok" ? vpInfo(r).text : ""].filter(Boolean).join("\n");
 
   const tePotentialRows = (r) => [
     ["Te from Vp − Vf (cyl. OML)", `${fmtG(r.Te_VpVf_OML_eV, 4)} eV`],
@@ -401,7 +398,7 @@
       ["Floating potential Vf", fmtG(r.Vf, 5)],
       ["Vp from dI/dV", fmtG(r.Vp_dIdV, 5)],
       ["Vp from log-fit intersection", fmtG(r.Vp_intersection, 5)],
-      ["Vp agreement (dI/dV vs intersection)", IV.ui.vpAgreementLabel(r.Vp_dIdV, r.Vp_intersection)],
+      ["Vp check (dI/dV vs intersection)", vpInfo(r).label],
       ["Final plasma potential Vp", fmtG(r.Vp, 5)],
       ["Electron temperature Te", `${fmtG(r.Te_eV, 5)} eV`],
       ...tePotentialRows(r),
@@ -660,6 +657,14 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.4.0-beta.4",
+      title: "Vp check in volts",
+      items: [
+        "Vp check now in volts: Vp from the dI/dV peak and from the fit intersection within 2 V is ✓ good; 2–5 V is ok only if Te from Vp − Vf confirms the fitted Te; above 5 V (or 2–5 V without that confirmation) the curve should be reviewed by eye (red warning). Exported as Vp_difference_V and Vp_check (good / ok / review).",
+        "Batch review: the ΔVp column is in volts; curves that need review by this rule are marked “⚠ check”.",
+      ],
+    },
     {
       version: "2.4.0-beta.3",
       title: "Vp check",

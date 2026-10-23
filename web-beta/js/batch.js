@@ -233,7 +233,7 @@
   function exportCSV() {
     const cols = ["file", batch.paramName || "parameter", "status", "reviewed_by_human",
       "Te_eV", "Te_VpVf_OML_eV", "Te_VpVf_planar_eV", "Te_check", "ne_m3", "ni_m3", "ni_over_ne",
-      "Vp", "Vp_dIdV", "Vp_intersection", "Vp_agreement_pct", "Vp_check", "Vf", "Iis_A", "Ies_A", "flags"];
+      "Vp", "Vp_dIdV", "Vp_intersection", "Vp_difference_V", "Vp_check", "Vf", "Iis_A", "Ies_A", "flags"];
     const cell = (v) => {
       if (typeof v === "number") return Number.isFinite(v) ? (v !== 0 && Math.abs(v) < 1e-4 ? v.toExponential() : String(v)) : "nan";
       const s = String(v ?? "");
@@ -244,7 +244,7 @@
       const r = it.results || {};
       lines.push([it.name, it.param, it.status, it.status === "accepted" || it.status === "rejected" ? "yes" : "no",
         r.Te_eV, r.Te_VpVf_OML_eV, r.Te_VpVf_planar_eV, r.Te_check, r.ne_m3, r.ni_m3, r.ni_m3 / r.ne_m3,
-        r.Vp, r.Vp_dIdV, r.Vp_intersection, r.Vp_agreement_pct, r.Vp_check, r.Vf, r.Iis_A, r.Ies_A, (it.flags || []).join("; ")].map(cell).join(","));
+        r.Vp, r.Vp_dIdV, r.Vp_intersection, r.Vp_difference_V, r.Vp_check, r.Vf, r.Iis_A, r.Ies_A, (it.flags || []).join("; ")].map(cell).join(","));
     }
     IV.ui.download(`batch_results_${new Date().toISOString().slice(0, 10)}.csv`, lines.join("\n") + "\n", "text/csv");
   }
@@ -364,9 +364,9 @@
         el("td", { text: fmtE(r.ne_m3, 2) }),
         el("td", { text: fmtG(r.ni_m3 / r.ne_m3, 3) }),
         el("td", { text: fmtG(r.Vp, 4) }),
-        el("td", { text: Number.isFinite(r.Vp_agreement_pct) ? `${fmtG(r.Vp_agreement_pct, 2)} %` : "—",
-          title: "Vp from dI/dV vs from the fit intersection (should be within 5–10 %)",
-          class: r.Vp_check === "poor" ? "vp-poor" : "" }),
+        el("td", { text: Number.isFinite(r.Vp_difference_V) ? `${fmtG(r.Vp_difference_V, 2)} V` : "—",
+          title: "Vp from dI/dV vs from the fit intersection: ≤ 2 V good, ≤ 5 V ok if the Te cross-check agrees, otherwise review",
+          class: r.Vp_check === "review" ? "vp-poor" : "" }),
         el("td", { text: fmtG(r.Vf, 4) }),
         actions,
       ]);
