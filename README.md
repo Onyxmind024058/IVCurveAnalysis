@@ -78,10 +78,17 @@ The proposals never replace the review: they only save the clicks. The quality l
 
 ```bash
 node --test web/tests/numerics.test.js
-node --test web-beta/tests/numerics.test.js web-beta/tests/auto.test.js   # beta, incl. batch proposals
+node --test web/tests/release.test.js
+node --test web-beta/tests/numerics.test.js web-beta/tests/auto.test.js web-beta/tests/release.test.js   # beta
 ```
 
 All tests should report `ok`. Run them after every change to the analysis code.
+
+### Releasing a new version
+
+1. In `web/js/app.js` (or `web-beta/js/app.js`): raise `APP_VERSION` and add a `CHANGELOG` entry at the top (shown in *What's new*).
+2. In the same folder's `index.html`: replace the old `?v=…` after every script and stylesheet with the new version. The new file addresses make every browser load the complete new version on the next reload, instead of mixing a new page with old cached scripts.
+3. Run `node --test web/tests/release.test.js` (and the other tests); it fails if a `?v=` or the What's new entry does not match `APP_VERSION`.
 
 ---
 

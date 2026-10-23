@@ -14,7 +14,7 @@
 // Change only if the list of files below changes shape; contents refresh by themselves.
 // The beta in /web-beta/ shares this origin, so only caches with our own prefix are touched.
 const CACHE_PREFIX = "ivcurve-app-";
-const CACHE = `${CACHE_PREFIX}v1`;
+const CACHE = `${CACHE_PREFIX}v2`;
 const NETWORK_TIMEOUT_MS = 4000;
 
 const APP_FILES = [
@@ -58,7 +58,11 @@ self.addEventListener("activate", (event) => {
 });
 
 async function fromNetwork(request) {
-  const response = await fetch(request);
+  // Always revalidate with the server (cheap 304 when unchanged). Otherwise the
+  // browser may reuse its HTTP-cached copy (GitHub Pages: max-age=600) and mix a
+  // new index.html with an old script for up to 10 minutes after an update.
+  // Fetched by URL because a navigation Request cannot be re-created with options.
+  const response = await fetch(request.url, { cache: "no-cache", credentials: "same-origin" });
   if (response.ok && response.type === "basic") {
     const copy = response.clone();
     caches.open(CACHE).then((cache) => cache.put(request, copy));
