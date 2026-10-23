@@ -10,18 +10,22 @@
   };
   const children = (node, tag) => Array.from(node.children).filter((c) => c.tagName === tag);
 
+  /** Values of <tag><Data>…</Data></tag>; empty or non-numeric values become NaN; null if the tag is missing. */
   function parseSeries(item, tag) {
     const node = child(item, tag);
-    if (!node) throw new Error(`Missing tag: ${tag}`);
-    const values = Float64Array.from(children(node, "Data"), (d) => {
+    if (!node) return null;
+    return Float64Array.from(children(node, "Data"), (d) => {
       const t = d.textContent.trim();
       return t === "" ? NaN : Number(t);
     });
-    const bad = values.findIndex((v) => !Number.isFinite(v));
-    if (bad >= 0) throw new Error(`${tag}: value #${bad + 1} is empty or not a number.`);
-    return values;
   }
 
+  /**
+   * Returns the scans sorted by ID. VData and IData are required; RefData is
+   * optional: when it is missing, empty or incomplete it is filled with NaN
+   * and only VData can be used as x axis. Points with an empty voltage or
+   * current are dropped. Notes about all this are in scans.notes.
+   */
   function parseLDA(text) {
     const doc = new DOMParser().parseFromString(text, "application/xml");
     const err = doc.querySelector("parsererror");
@@ -30,25 +34,37 @@
     const dm = child(doc.documentElement, "DataManager");
     if (!dm) throw new Error("No <DataManager> found");
 
+    let noRef = 0, dropped = 0;
     const scans = children(dm, "DataItem").map((item) => {
       const idNode = child(item, "ID");
-      return {
-        id: parseInt(idNode ? idNode.textContent : "-1", 10),
-        VData: parseSeries(item, "VData"),
-        RefData: parseSeries(item, "RefData"),
-        IData: parseSeries(item, "IData"),
-      };
-    }).map((scan) => {
-      const n = scan.IData.length;
-      if (scan.VData.length !== n || scan.RefData.length !== n) {
-        throw new Error(`Scan ${scan.id}: VData, RefData and IData have different lengths `
-          + `(${scan.VData.length}, ${scan.RefData.length}, ${n}).`);
+      const id = parseInt(idNode ? idNode.textContent : "-1", 10);
+      const V = parseSeries(item, "VData"), I = parseSeries(item, "IData");
+      let R = parseSeries(item, "RefData");
+      if (!V) throw new Error(`Scan ${id}: missing <VData>.`);
+      if (!I) throw new Error(`Scan ${id}: missing <IData>.`);
+      if (V.length !== I.length) {
+        throw new Error(`Scan ${id}: VData and IData have different lengths (${V.length}, ${I.length}).`);
       }
-      if (n < 10) throw new Error(`Scan ${scan.id}: only ${n} points.`);
-      return scan;
+      if (!R || R.length !== V.length || !R.every(Number.isFinite)) {
+        noRef++;
+        R = new Float64Array(V.length).fill(NaN);
+      }
+      const keep = [];
+      for (let k = 0; k < V.length; k++) if (Number.isFinite(V[k]) && Number.isFinite(I[k])) keep.push(k);
+      dropped += V.length - keep.length;
+      if (keep.length < 10) throw new Error(`Scan ${id}: only ${keep.length} usable points.`);
+      const pick = (a) => Float64Array.from(keep, (k) => a[k]);
+      return { id, VData: pick(V), RefData: pick(R), IData: pick(I) };
     });
     if (!scans.length) throw new Error("No scans found");
     scans.sort((a, b) => a.id - b.id);
+    scans.notes = [];
+    if (noRef) {
+      scans.notes.push(noRef === scans.length
+        ? "RefData is empty in this file — VData is used as x axis."
+        : `RefData is empty in ${noRef} of ${scans.length} scans — VData is used as x axis.`);
+    }
+    if (dropped) scans.notes.push(`${dropped} point${dropped === 1 ? "" : "s"} with an empty voltage or current skipped.`);
     return scans;
   }
 
