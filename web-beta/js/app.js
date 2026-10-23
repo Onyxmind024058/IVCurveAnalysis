@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.4.0-beta.1";
+  const APP_VERSION = "2.4.0-beta.2";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -646,6 +646,13 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.4.0-beta.2",
+      title: "Fix",
+      items: [
+        "After an update, browsers could keep running an old copy of the program for a few minutes; every file now has the version in its address, so an update always loads completely.",
+      ],
+    },
     {
       version: "2.4.0-beta.1",
       title: "Beta: assisted batch review",
