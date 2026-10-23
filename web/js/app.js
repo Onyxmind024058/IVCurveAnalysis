@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.2.0";
+  const APP_VERSION = "2.2.1";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -144,7 +144,17 @@
   // Data loading / plotting
   // ---------------------------------------------------------------------------
 
+  /** RefData can be the x axis only when every scan has a complete RefData series. */
+  function updateAxisChoice(scans) {
+    const ok = scans.every((s) => s.RefData && s.RefData.length === s.VData.length && s.RefData.every(Number.isFinite));
+    const opt = Array.from($("xaxis").options).find((o) => o.value === "RefData");
+    opt.disabled = !ok;
+    opt.textContent = ok ? "RefData" : "RefData (empty in this file)";
+    if (!ok && $("xaxis").value === "RefData") $("xaxis").value = "VData";
+  }
+
   function setScans(scans, name) {
+    updateAxisChoice(scans);
     state.rawScans = scans;
     state.scans = scans;
     state.fileName = name;
@@ -175,7 +185,9 @@
       if (/\.ivsession$/i.test(file.name) || /^\s*\{/.test(clean)) {
         loadSession(JSON.parse(clean), file.name);
       } else if (/\.(lda|xml)$/i.test(file.name) || looksXML) {
-        setScans(IV.lda.parseLDA(text), file.name);
+        const scans = IV.lda.parseLDA(text);
+        setScans(scans, file.name);
+        for (const note of scans.notes) log(note);
       } else {
         const scans = await IV.csv.importCSV(text, file.name);
         if (scans) setScans(scans, file.name);
@@ -605,6 +617,14 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.2.1",
+      title: "Fix",
+      items: [
+        ".lda files with an empty or missing RefData load again (RefData is then unavailable as x axis; VData is used).",
+        "Empty voltage or current values in an .lda file are skipped instead of blocking the import.",
+      ],
+    },
     {
       version: "2.2.0",
       title: "Ion density and saved analyses",
