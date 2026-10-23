@@ -503,3 +503,7 @@ dialog.win.medium { width: min(1100px, calc(100vw - 32px)); height: min(760px, c
 
 /* offline indicator in the status bar */
 .badge.offline { background: var(--border); color: var(--text); margin-right: 6px; }
+
+/* "Try beta" button */
+.btn.try-beta { gap: 7px; }
+.badge.beta { background: var(--red); color: #fff; letter-spacing: .5px; font-size: 10.5px; }
