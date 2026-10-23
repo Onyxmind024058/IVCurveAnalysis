@@ -719,6 +719,32 @@
     showWhatsNew();
   }
 
+  // ---------------------------------------------------------------------------
+  // Beta version (web-beta/ next to this folder)
+  // ---------------------------------------------------------------------------
+
+  const BETA_URL = "../web-beta/";
+  // Keep in step with the beta's own What's new.
+  const BETA_FEATURES = [
+    ["Assisted batch review", "load a whole series of .lda/.csv files (positions, pressures, powers…) and give each file a parameter value."],
+    ["Automatic fit-region proposals", "for every curve, with a status ✓ good / ⚠ check (with the reasons) / ✗ failed."],
+    ["Fast review", "each curve opens in the manual OML window, already filled in; check it and press “Accept & next”."],
+    ["Results overview", "the Results tab shows ln(Ie) with both fits, to judge a curve at a glance."],
+    ["Series results", "summary plot of Te, ne, ni, Vp, Vf against your parameter, one CSV for the whole series, and save/open a batch to continue later."],
+  ];
+
+  async function showTryBeta() {
+    const items = BETA_FEATURES.map(([t, d]) => `<li style="margin:5px 0"><b>${IV.escape(t)}</b>: ${IV.escape(d)}</li>`).join("");
+    const choice = await IV.ui.message("Try the beta version",
+      `<p style="margin:0 0 8px">The beta is this app plus new features that are still being tested:</p>
+       <ul style="margin:0 0 10px;padding-left:18px">${items}</ul>
+       <p class="muted" style="margin:0;font-size:12px">The beta opens in a new tab; this version stays as it is.
+       Your files are still read only on your computer. Feedback is welcome:
+       <a href="mailto:paul.hiret@unibas.ch">paul.hiret@unibas.ch</a>.</p>`,
+      [{ label: "Not now" }, { label: "Open beta version ↗", value: "open", primary: true }]);
+    if (choice === "open") window.open(BETA_URL, "_blank", "noopener");
+  }
+
   function showAbout() {
     IV.ui.message("About",
       `<p style="font-family:var(--font-heading);font-size:16px;margin:0 0 4px">Langmuir Probe IV Analyser UB</p>
@@ -760,6 +786,7 @@
     $("exportMean").addEventListener("click", () => { closeMenus(); exportMeanCSV(); });
     $("exportAll").addEventListener("click", () => { closeMenus(); exportAllCSV(); });
     $("whatsNewBtn").addEventListener("click", showWhatsNew);
+    $("tryBetaBtn").addEventListener("click", showTryBeta);
     $("aboutBtn").addEventListener("click", showAbout);
     $("clearLog").addEventListener("click", () => {
       state.cards = [];
