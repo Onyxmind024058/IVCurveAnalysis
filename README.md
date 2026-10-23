@@ -2,6 +2,8 @@
 
 ### ▶ Open the app: **[onyxmind024058.github.io/IVCurveAnalysis/web/](https://onyxmind024058.github.io/IVCurveAnalysis/web/)**
 
+🧪 Beta with the new **assisted batch review**: [onyxmind024058.github.io/IVCurveAnalysis/web-beta/](https://onyxmind024058.github.io/IVCurveAnalysis/web-beta/), see [Beta: assisted batch review](#beta-assisted-batch-review).
+
 A browser application for loading Langmuir probe measurements (`.lda` or CSV files), plotting individual and averaged I–V curves, and extracting plasma parameters using automatic OML-style analysis, manual OML analysis, EEDF/EEPF calculation, and an EPFL two-fluid model.
 
 The program is designed for interactive analysis of Langmuir probe measurements, especially when automatic fitting is not sufficient and the user needs to manually select fit regions. It runs entirely in your browser: measurement files are read locally and **never uploaded**.
@@ -53,12 +55,30 @@ The app lives in the `web/` folder, in the spirit of ImageJ.js:
   - Scans are averaged on an evenly spaced grid over their common voltage range; up/down (triangular) sweeps are split into separate branches.
   - Other fixes: EEDF is smoothed before clipping negatives, rebinning keeps the last point, smoothing windows are always odd, and corrupt `.lda` files give a clear error.
 
+## Beta: assisted batch review
+
+The beta (`web-beta/`, link at the top) adds **batch review** for a series of measurements (radial profile, pressure or power scan…). It is the stable app plus this feature; it can be installed next to the stable app and has its own offline copy. Feedback is welcome before it moves to the stable version.
+
+1. Set the probe, ion species, x axis and data range in the main window as usual; the batch uses the same settings.
+2. Click **Batch review β** → **Add files…** and select all `.lda`/`.csv` files of the series (or drop them on the window). For CSV files the column choice of the first file is reused for the others.
+3. Enter the **parameter** of each file (a number in the file name is filled in automatically) and its name, e.g. *Position (mm)*.
+4. For every curve the app **proposes fit regions** (the straightest part of ln(Ie) between Vf and Vp for Te, a saturation window above Vp, an ion region a few Te below Vf) and gives a status:
+   - **✓ good**: the proposal passed every check;
+   - **⚠ check**: something looks wrong; the reasons are listed (transition not straight, poor ion fit, no saturation region, Vp at the end of the sweep, the two Vp values disagree, Te far from Te from Vp − Vf, nᵢ/nₑ far from 1, Te outside 0.2–30 eV);
+   - **✗ failed**: no proposal possible; set the regions by hand.
+5. **Review next ▶** opens each curve in the manual OML window, on the *Results* tab with an overview of ln(Ie) and both fits. Check it, adjust any step if needed, and press **Accept & next**. *Start review from* chooses whether a curve opens with its own proposal or with the regions of the previous accepted curve. *Skip for now* moves on without a decision; unticking *Analysable* marks the curve as skipped.
+6. **Accept all good…** accepts the remaining ✓ curves without opening them. They are marked *✓ unreviewed* in the table and `reviewed_by_human = no` in the export, so this always stays visible.
+7. The **summary plot** shows Te, nₑ, nᵢ, Vp, Vf… against the parameter (filled points: reviewed; open points: not yet). **Export table CSV** writes one row per file. **Save batch** writes one `.ivbatch` file (data, regions, results, statuses); **Open batch…** continues later. **↗** opens a file in the main window (for EEPF, EPFL…).
+
+The proposals never replace the review: they only save the clicks. The quality limits are in `web-beta/js/auto.js` (`LIMITS`).
+
 ## Checking the physics (automatic tests)
 
 `web/tests/numerics.test.js` checks the analysis code on synthetic curves with known answers (Te, nₑ, nᵢ, Iis at Vf, EEDF density, Te from Vp − Vf, averaging, EPFL). With [Node.js](https://nodejs.org) 18 or newer, from the repository folder:
 
 ```bash
 node --test web/tests/numerics.test.js
+node --test web-beta/tests/numerics.test.js web-beta/tests/auto.test.js   # beta, incl. batch proposals
 ```
 
 All tests should report `ok`. Run them after every change to the analysis code.

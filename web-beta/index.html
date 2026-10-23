@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Langmuir Probe IV Analyser UB (beta)</title>
+  <meta name="description" content="Browser-based Langmuir probe I-V analysis: OML, EEPF/EEDF and EPFL two-fluid model. Runs locally; files never leave your computer.">
+  <link rel="icon" href="icon.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="theme-color" content="#FFFFFF">
+  <meta name="apple-mobile-web-app-title" content="IV Analyser">
+  <meta name="mobile-web-app-capable" content="yes">
+  <script>
+    // apply the stored theme before first paint
+    try { const t = localStorage.getItem("ivcurve.theme"); if (t) document.documentElement.dataset.theme = t; } catch (_) {}
+  </script>
+  <link rel="stylesheet" href="css/basel.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- title bar -->
+  <header class="titlebar">
+    <div class="brand">
+      <img src="icon.png" alt="" width="22" height="22" style="align-self:center">
+      <h1>Langmuir Probe IV Analyser UB</h1>
+      <span class="badge beta" title="Beta version: new features to try. The stable version is at /web/.">BETA</span>
+      <a class="stable-link" href="../web/">Stable version →</a>
+      <span class="file" id="fileName">No file loaded</span>
+    </div>
+    <div class="segmented" id="themeSwitch" role="group" aria-label="Theme">
+      <button type="button" data-theme="light" aria-pressed="false">Light</button>
+      <button type="button" data-theme="dark" aria-pressed="false">Dark</button>
+    </div>
+  </header>
+
+  <!-- toolbar -->
+  <nav class="toolbar" aria-label="Main actions">
+    <button class="btn" id="openBtn" data-tip="Open a .lda, .csv or saved .ivsession file (Ctrl+O)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 7h6l2 2h10v10H3z"/></svg>
+      Open .lda / .csv
+    </button>
+    <input type="file" id="fileInput" accept=".lda,.xml,.csv,.tsv,.txt,.dat,.ivsession,.json,application/xml,text/xml,text/csv,text/plain,application/json" hidden>
+    <button class="btn" id="exampleBtn" data-tip="Synthetic data: Te = 3 eV, Vp = 10 V">Example data</button>
+    <span class="sep"></span>
+    <button class="btn primary" id="analyseBtn" data-needs-data disabled>Analyse averaged I-V</button>
+    <button class="btn" id="manualBtn" data-needs-data disabled>Manual OML analysis</button>
+    <button class="btn" id="eepfBtn" data-needs-data disabled>EEPF / EEDF</button>
+    <button class="btn" id="epflBtn" data-needs-data disabled>EPFL two-fluid model</button>
+    <span class="sep"></span>
+    <button class="btn" id="batchBtn" data-tip="Analyse a series of files and review each curve">Batch review β</button>
+    <span class="sep"></span>
+    <div class="menu-wrap">
+      <button class="btn" id="exportBtn" data-needs-data disabled aria-haspopup="true" aria-expanded="false">
+        Save / Export
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+      </button>
+      <div class="menu" id="exportMenu" role="menu">
+        <button role="menuitem" id="saveSession">Save analysis (.ivsession)…</button>
+        <hr>
+        <button role="menuitem" id="exportMean">Export mean CSV</button>
+        <button role="menuitem" id="exportAll">Export all analysis CSV</button>
+      </div>
+    </div>
+    <span class="spacer"></span>
+    <button class="btn hidden" id="installBtn" data-tip="Install as an app that also works offline">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+      Install app
+    </button>
+    <button class="btn ghost" id="whatsNewBtn">What’s new</button>
+    <button class="btn ghost" id="aboutBtn">About</button>
+  </nav>
+
+  <!-- body -->
+  <main class="body">
+    <aside class="dock" aria-label="Settings">
+      <fieldset class="group">
+        <legend>Plot</legend>
+        <div class="form">
+          <label for="xaxis">X axis</label>
+          <select id="xaxis"><option value="VData">VData</option><option value="RefData">RefData</option></select>
+          <label class="check full"><input type="checkbox" id="showAll" checked> Show all scans</label>
+          <label class="check full"><input type="checkbox" id="showMean" checked> Show mean ± std</label>
+        </div>
+      </fieldset>
+
+      <fieldset class="group">
+        <legend>Data range</legend>
+        <div class="form">
+          <label class="check full"><input type="checkbox" id="cropEnable" data-needs-data disabled> Reduce curve before analysis</label>
+          <label for="skipStart">Skip first</label>
+          <div class="unit-input"><input type="number" id="skipStart" min="0" step="1" value="0" disabled data-crop><span>pts</span></div>
+          <label for="skipEnd">Skip last</label>
+          <div class="unit-input"><input type="number" id="skipEnd" min="0" step="1" value="0" disabled data-crop><span>pts</span></div>
+          <label for="cropFrom">From</label>
+          <div class="unit-input"><input type="number" id="cropFrom" step="0.1" disabled data-crop><span>V</span></div>
+          <label for="cropTo">To</label>
+          <div class="unit-input"><input type="number" id="cropTo" step="0.1" disabled data-crop><span>V</span></div>
+          <div class="row-actions"><button class="btn" id="cropReset" disabled data-crop>Reset to full range</button></div>
+        </div>
+        <p class="crop-info" id="cropInfo">Skip points at the start/end of each sweep and/or keep only a voltage window. Drag the lines on the plot to adjust.</p>
+      </fieldset>
+
+      <fieldset class="group">
+        <legend>Probe / OML settings</legend>
+        <div class="form">
+          <label for="diameter">Diameter</label>
+          <div class="unit-input"><input type="number" id="diameter" data-label="diameter" min="0.001" max="100" step="0.01" value="0.15"><span>mm</span></div>
+          <label for="length">Length</label>
+          <div class="unit-input"><input type="number" id="length" data-label="length" min="0.001" max="1000" step="0.1" value="10"><span>mm</span></div>
+          <label for="ionFraction">Ion fit fraction</label>
+          <input type="number" id="ionFraction" data-label="ion fit fraction" min="0.01" max="0.5" step="0.01" value="0.2">
+          <label for="ionGas">Ion species</label>
+          <select id="ionGas"></select>
+          <label for="ionMass">Ion mass</label>
+          <div class="unit-input"><input type="number" id="ionMass" data-label="ion mass" min="0.5" max="500" step="0.001" value="39.948"><span>amu</span></div>
+          <label for="smoothWindow">Smoothing window</label>
+          <input type="number" id="smoothWindow" data-label="smoothing window" min="3" max="501" step="2" value="21">
+        </div>
+      </fieldset>
+
+      <p class="muted" style="font-size:11.5px;margin:0">
+        Everything runs in this browser tab. Your data files are read locally and never uploaded.
+      </p>
+    </aside>
+
+    <section class="center" aria-label="Plot">
+      <div class="welcome" id="welcome">
+        <h2>Open a Langmuir probe measurement</h2>
+        <p>Load a <span class="mono">.lda</span> or <span class="mono">.csv</span> file (or drop it anywhere on this window) to plot the individual and averaged I–V curves and run the OML, EEPF/EEDF and EPFL two-fluid analyses.</p>
+        <div class="actions">
+          <button class="btn primary" id="welcomeOpen">Open .lda / .csv file</button>
+          <button class="btn" id="welcomeExample">Try example data</button>
+        </div>
+      </div>
+      <div class="plot hidden" id="mainPlot"></div>
+    </section>
+
+    <aside class="dock right" aria-label="Results">
+      <div class="dock-title">Results &amp; log <button class="btn ghost" id="clearLog" style="min-height:22px;padding:1px 8px;font-size:11px;text-transform:none;letter-spacing:0">Clear</button></div>
+      <div class="results" id="log">
+        <div class="empty-state">Analysis results will appear here.</div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- status bar -->
+  <footer class="statusbar">
+    <span><span class="badge offline hidden" id="offlineBadge">Offline — using the saved copy</span> <span id="statusText">Loading…</span></span>
+    <span>Basel theme · <span id="themeName">Light</span> · <span id="version"></span></span>
+  </footer>
+</div>
+
+<div class="dropzone" id="dropzone">Drop the .lda or .csv file to open it</div>
+<div class="toasts" aria-live="polite"></div>
+
+<script src="vendor/plotly-basic.min.js"></script>
+<script src="js/numerics.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/plot.js"></script>
+<script src="js/lda.js"></script>
+<script src="js/csv.js"></script>
+<script src="js/auto.js"></script>
+<script src="js/manual-oml.js"></script>
+<script src="js/eepf.js"></script>
+<script src="js/epfl.js"></script>
+<script src="js/batch.js"></script>
+<script src="js/app.js"></script>
+<script src="js/pwa.js"></script>
+</body>
+</html>
