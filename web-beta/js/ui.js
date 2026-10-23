@@ -242,25 +242,31 @@
       + "which makes the Vp − Vf value too high.";
   }
 
-  /** Short label for the Vp agreement, e.g. "3.2 % ✓". */
-  function vpAgreementLabel(vpDidv, vpIntersection) {
-    const c = IV.num.vpAgreement(vpDidv, vpIntersection);
-    if (!c.checked) return c.reason === "near-zero" ? `Δ ${fmtG(c.diff, 3)} V (n/a near 0 V)` : "n/a";
-    const mark = { good: "✓ good", fair: "acceptable", poor: "✗ too large" }[c.level];
-    return `${fmtG(c.pct, 2)} % ${mark}`;
-  }
-
-  /** Text when the two Vp values disagree: { text, level } with level "fair" or "poor"; text "" when fine. */
-  function vpWarning(vpDidv, vpIntersection) {
-    const c = IV.num.vpAgreement(vpDidv, vpIntersection);
-    if (!c.checked || c.level === "good") return { text: "", level: c.level || "" };
-    const lim = IV.num.VP_AGREEMENT;
-    const what = `Vp from dI/dV (${fmtG(vpDidv, 4)} V) and from the fit intersection (${fmtG(vpIntersection, 4)} V) differ by ${fmtG(c.pct, 2)} %`;
-    if (c.level === "fair") return { level: "fair", text: `${what} — acceptable (${lim.good}–${lim.fair} %).` };
-    return { level: "poor", text: `⚠ ${what}, more than ${lim.fair} %. Check the dI/dV smoothing, the Vp line and the transition/saturation regions.` };
+  /**
+   * Vp check of a manual result, ready to show:
+   * { level: "good"|"ok"|"review"|"", label (short, for tables), text (sentence; "" when good) }.
+   */
+  function vpCheckInfo(vpDidv, vpIntersection, teFit, teOML, tePlanar) {
+    const c = IV.num.vpCheck(vpDidv, vpIntersection, teFit, teOML, tePlanar);
+    if (!c.checked) return { level: "", label: "n/a", text: "" };
+    const lim = IV.num.VP_CHECK;
+    const dv = `${fmtG(c.diff, 2)} V`;
+    const pair = `Vp from dI/dV (${fmtG(vpDidv, 4)} V) and from the fit intersection (${fmtG(vpIntersection, 4)} V) differ by ${dv}`;
+    if (c.level === "good") return { level: "good", label: `${dv} ✓ good`, text: "" };
+    if (c.level === "ok") {
+      return { level: "ok", label: `${dv} ok (Te check ✓)`,
+        text: `${pair} (${lim.goodV}–${lim.okV} V); confirmed by Te from Vp − Vf.` };
+    }
+    const why = {
+      large: [`${dv} ⚠ review`, `more than ${lim.okV} V`],
+      "te-mismatch": [`${dv} ⚠ Te check failed`, `${lim.goodV}–${lim.okV} V and Te from Vp − Vf does not confirm Te`],
+      "no-te-check": [`${dv} ⚠ review`, `${lim.goodV}–${lim.okV} V and Te from Vp − Vf is not available to confirm it`],
+    }[c.reason];
+    return { level: "review", label: why[0],
+      text: `⚠ ${pair}: ${why[1]}. Review this curve by eye: dI/dV smoothing, the Vp line, the transition and saturation regions.` };
   }
 
   IV.ui = {
-    vpAgreementLabel, vpWarning,
+    vpCheckInfo,
     teWarning, el, fmtG, fmtE, toast, download, openDialog, message, numberField, sliderField, checkField, selectField, tabs };
 })(window.IV = window.IV || {});

@@ -392,29 +392,31 @@
    * Cross-check of a fitted Te against the Vp - Vf estimates: the fitted value
    * should lie in [min(OML, planar) * (1 - limit), max(OML, planar) * (1 + limit)].
    */
-  /**
-   * Validation of a manual analysis: the plasma potential from the dI/dV peak
-   * and from the intersection of the ln(Ie) fits should agree within 5–10 %
-   * of Vp. level: "good" (<= 5 %), "fair" (<= 10 %), "poor" (> 10 %).
-   * Not checked when |Vp| < 1 V, where a percentage is meaningless.
-   */
-  const VP_AGREEMENT = { good: 5, fair: 10, minAbsVp: 1 };
-  function vpAgreement(vpDidv, vpIntersection) {
-    if (!Number.isFinite(vpDidv) || !Number.isFinite(vpIntersection)) return { checked: false, reason: "missing" };
-    const mean = 0.5 * (vpDidv + vpIntersection);
-    const diff = Math.abs(vpDidv - vpIntersection);
-    if (Math.abs(mean) < VP_AGREEMENT.minAbsVp) return { checked: false, reason: "near-zero", diff };
-    const pct = (100 * diff) / Math.abs(mean);
-    const level = pct <= VP_AGREEMENT.good ? "good" : pct <= VP_AGREEMENT.fair ? "fair" : "poor";
-    return { checked: true, diff, pct, level };
-  }
-
   function teConsistency(teFit, teOML, tePlanar, limit = 0.3) {
     if (![teFit, teOML, tePlanar].every(Number.isFinite)) return { checked: false, ok: true };
     const lo = Math.min(teOML, tePlanar) * (1 - limit);
     const hi = Math.max(teOML, tePlanar) * (1 + limit);
     return { checked: true, ok: teFit >= lo && teFit <= hi, lo, hi, limit };
   }
+  /**
+   * Validation of a manual analysis: compare Vp from the dI/dV peak with Vp
+   * from the intersection of the ln(Ie) fits, in volts.
+   *   dVp <= 2 V      "good"
+   *   2 V < dVp <= 5 V  "ok" if Te from Vp - Vf confirms the fitted Te
+   *                    (teConsistency), else "review"
+   *   dVp > 5 V       "review" (check the curve by eye)
+   */
+  const VP_CHECK = { goodV: 2, okV: 5 };
+  function vpCheck(vpDidv, vpIntersection, teFit, teOML, tePlanar) {
+    if (!Number.isFinite(vpDidv) || !Number.isFinite(vpIntersection)) return { checked: false };
+    const diff = Math.abs(vpDidv - vpIntersection);
+    if (diff <= VP_CHECK.goodV) return { checked: true, diff, level: "good" };
+    if (diff > VP_CHECK.okV) return { checked: true, diff, level: "review", reason: "large" };
+    const te = teConsistency(teFit, teOML, tePlanar);
+    if (!te.checked) return { checked: true, diff, level: "review", reason: "no-te-check" };
+    return { checked: true, diff, level: te.ok ? "ok" : "review", reason: te.ok ? "te-confirms" : "te-mismatch" };
+  }
+
 
   // ---------------------------------------------------------------------------
   // Automatic first-pass OML analysis
@@ -688,7 +690,7 @@
   }
 
   const api = {
-    E_CHARGE, M_E, AMU, ION_SPECIES, ionDensityOML, teFromPotentials, teConsistency, vpAgreement, VP_AGREEMENT,
+    E_CHARGE, M_E, AMU, ION_SPECIES, ionDensityOML, teFromPotentials, teConsistency, vpCheck, VP_CHECK,
     argsort, take, sign, min, max, nanmin, nanmax, argmax, nanargmax, nanmedian, nanmean,
     linspace, interp, gradient, polyfit, polyval, lstsq,
     makeOdd, movingAverage, polynomialSmooth, smoothSignal,
