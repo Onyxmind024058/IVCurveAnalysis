@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.4.0-beta.4";
+  const APP_VERSION = "2.4.0-beta.5";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -657,6 +657,13 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.4.0-beta.5",
+      title: "Settings per curve",
+      items: [
+        "Saved batches (.ivbatch) now store, for every reviewed curve, the settings it was reviewed with (probe, ion species, x axis, data range); before, only the settings at the moment of saving were stored.",
+      ],
+    },
     {
       version: "2.4.0-beta.4",
       title: "Vp check in volts",

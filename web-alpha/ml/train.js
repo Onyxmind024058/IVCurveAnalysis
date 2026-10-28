@@ -98,6 +98,14 @@ const report = [
   `| Vp error (V) | ${fmt(v.vp_error_V.rules_median)} | ${fmt(v.vp_error_V.model_median)} |`,
   `| Curves where the model's regions could not be fitted | — | ${v.model_failed} of ${v.n} |`,
   "",
+  "By ion species and by probe (same held-out curves). One model serves all gases and probes; if one group is",
+  "clearly worse than the others, it needs more curves (or, if that does not help, a model of its own):",
+  "",
+  "| Group | Curves | Te error rules → model (%) | Vp error rules → model (V) |",
+  "|---|---|---|---|",
+  ...[...v.by_ion.map((g) => ["ion " + g.name, g]), ...v.by_probe.map((g) => ["probe " + g.name, g])].map(([name, g]) =>
+    `| ${name} | ${g.n} | ${fmt(g.te_error_pct.rules_median)} → ${fmt(g.te_error_pct.model_median)} | ${fmt(g.vp_error_V.rules_median)} → ${fmt(g.vp_error_V.model_median)} |`),
+  "",
   "Ship the model only if it is clearly better than the rules on the held-out curves.",
   "",
 ].filter((l) => l !== null).join("\n");

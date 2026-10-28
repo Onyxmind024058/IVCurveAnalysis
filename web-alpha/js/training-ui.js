@@ -53,12 +53,11 @@
     const collect = IV.ui.checkField("Add every curve I review and accept (batch review and manual OML)", {
       checked: IV.training.collecting(), onChange: (on) => IV.training.setCollecting(on),
     });
-    const fileInput = el("input", { type: "file", hidden: true, accept: ".ivtrain,application/json" });
+    const fileInput = el("input", { type: "file", hidden: true, multiple: true, accept: ".ivtrain,.ivbatch,application/json" });
     fileInput.addEventListener("change", async () => {
-      const f = fileInput.files[0]; fileInput.value = "";
-      if (!f) return;
-      try { const n = await IV.training.importText(await f.text()); IV.ui.toast(`${n} curves imported.`); refresh(); }
-      catch (e) { IV.ui.toast(e.message, "error"); }
+      const files = Array.from(fileInput.files); fileInput.value = "";
+      if (files.length) await importFiles(files);
+      refresh();
     });
     const modelInput = el("input", { type: "file", hidden: true, accept: ".js,.json,application/json,text/javascript" });
     modelInput.addEventListener("change", async () => {
@@ -79,7 +78,7 @@
       el("div", { style: "margin:10px 0" }, [collect.field]),
       el("div.row-buttons", {}, [
         el("button.btn.primary", { text: "Export training data (.ivtrain)…", onclick: async () => { const n = await IV.training.exportFile(); IV.ui.toast(n ? `${n} curves exported.` : "Nothing to export yet."); } }),
-        el("button.btn", { text: "Import .ivtrain…", onclick: () => fileInput.click() }), fileInput,
+        el("button.btn", { text: "Import .ivtrain / .ivbatch…", title: "Training sets, or saved batches: their reviewed and accepted curves are added", onclick: () => fileInput.click() }), fileInput,
         el("button.btn.destructive", { text: "Delete all…", onclick: clearAll }),
       ]),
       storageNote,
@@ -89,6 +88,29 @@
     d.foot.append(el("button.btn", { text: "Close", onclick: d.close }));
     ui = { d, progress, progressText, tbody, modelBox, storageNote, modelInput };
     refresh();
+  }
+
+  /** Imports several files and shows one summary (what was added, what was skipped and why). */
+  async function importFiles(files) {
+    let added = 0, already = 0;
+    const lines = [], skippedAll = [];
+    for (const f of files) {
+      try {
+        const r = await IV.training.importText(await f.text());
+        added += r.added; already += r.already;
+        lines.push(`<li><b>${IV.escape(f.name)}</b> (${r.kind}): ${r.added} added`
+          + (r.already ? `, ${r.already} already there` : "") + (r.skipped.length ? `, ${r.skipped.length} skipped` : "") + "</li>");
+        for (const s of r.skipped) skippedAll.push(`<li>${IV.escape(f.name)} → ${IV.escape(s.file)}: ${IV.escape(s.reason)}</li>`);
+      } catch (e) {
+        lines.push(`<li><b>${IV.escape(f.name)}</b>: ${IV.escape(e.message)}</li>`);
+      }
+    }
+    IV.ui.message("Import to training data",
+      `<p style="margin:0 0 6px"><b>${added}</b> curve${added === 1 ? "" : "s"} added${already ? `, ${already} already in the training data` : ""}.</p>
+       <ul style="margin:0 0 8px;padding-left:18px">${lines.join("")}</ul>`
+      + (skippedAll.length ? `<details><summary>${skippedAll.length} curve${skippedAll.length === 1 ? "" : "s"} not added</summary>
+         <ul style="margin:6px 0 0;padding-left:18px;font-size:12px">${skippedAll.join("")}</ul></details>
+         <p class="muted" style="font-size:12px;margin:8px 0 0">Only curves a person reviewed and accepted (“✔ reviewed”) are training data.</p>` : ""));
   }
 
   async function clearAll() {

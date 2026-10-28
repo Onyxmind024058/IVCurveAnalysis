@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.5.0-alpha.1";
+  const APP_VERSION = "2.5.0-alpha.2";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -257,18 +257,7 @@
   }
 
   /** Per scan: drop the first/last N acquired points, then keep only from <= x <= to. */
-  function cropScans(raw, crop, xkey) {
-    return raw.map((s) => {
-      const n = s.IData.length;
-      const keep = [];
-      for (let k = crop.skipStart; k < n - crop.skipEnd; k++) {
-        const x = s[xkey][k];
-        if (!(x < crop.from) && !(x > crop.to)) keep.push(k);
-      }
-      const pick = (a) => Float64Array.from(keep, (k) => a[k]);
-      return { ...s, VData: pick(s.VData), RefData: pick(s.RefData), IData: pick(s.IData) };
-    });
-  }
+  const cropScans = (raw, crop, xkey) => N.cropScans(raw, crop, xkey);
 
   /** Recompute state.scans from the raw data and the Data range panel. */
   function applyCrop(userChange = true) {
@@ -661,6 +650,16 @@
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
     {
+      version: "2.5.0-alpha.2",
+      title: "Import batches into the training data",
+      items: [
+        "Training α → Import now also accepts saved batches (.ivbatch): their curves marked “✔ reviewed” are added; curves accepted without review, not reviewed or skipped are left out, and a summary says why.",
+        "Each imported curve is rebuilt with the settings it was reviewed with and must reproduce the saved results; otherwise it is skipped (e.g. settings changed after the review).",
+        "The model takes the ion mass as an input, and the training report shows the accuracy per ion species and per probe: one model serves all gases and probes.",
+        "Saved batches (.ivbatch) now store, for every reviewed curve, the settings it was reviewed with (probe, ion species, x axis, data range); before, only the settings at the moment of saving were stored.",
+      ],
+    },
+    {
       version: "2.5.0-alpha.1",
       title: "Pre-alpha: training data for machine learning",
       items: [
@@ -910,15 +909,7 @@
   IV.app = {
     /** Mean curve of a file's scans with the main window's x axis and data range. */
     curveFor(rawScans) {
-      const xkey = $("xaxis").value;
-      const crop = readCrop();
-      let scans = rawScans;
-      if (crop.enabled) {
-        scans = cropScans(rawScans, crop, xkey);
-        if (Math.min(...scans.map((s) => s.IData.length)) < 10) throw new Error("The data range leaves fewer than 10 points.");
-      }
-      const avg = N.averageScans(N.splitSweeps(scans, xkey), xkey);
-      return { xkey, x: avg.x, imean: avg.imean };
+      return N.curveWith(rawScans, $("xaxis").value, readCrop());
     },
     probeArea,
     ionMass: () => numberValue("ionMass"),

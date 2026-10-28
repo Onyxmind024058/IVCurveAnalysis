@@ -82,6 +82,8 @@ The proposals never replace the review: they only save the clicks. The quality l
 **1. Collect (everyone, in the pre-alpha)**
 - Every curve you **review and accept** in the batch review or the manual OML window is added to a local training set (curve + your regions + your results + probe/ion/data range). Curves accepted with *Accept all good* (no human look) are **not** added.
 - **Training α** shows the progress towards 200, lists the curves, and **exports** them as one `.ivtrain` file (≈ 40 kB per curve). Send that file to the maintainer. Collection can be switched off in that window.
+- **Already reviewed batches count too:** *Training α → Import .ivtrain / .ivbatch…* takes saved batches (from the beta or the pre-alpha) and adds their curves marked **✔ reviewed**. Curves accepted without review, not reviewed, failed or skipped are left out, and a summary lists them with the reason. Each curve is rebuilt with the settings it was reviewed with and must reproduce its saved results, otherwise it is skipped. Importing the same curve twice does not count it twice.
+- **Settings in batch files:** a saved batch stores the main-window settings (probe, ion species, x axis, data range, smoothing) at the moment of saving, and — since beta 2.4.0-beta.5 / pre-alpha 2.5.0-alpha.2 — also the settings **each reviewed curve** was reviewed with. Older batch files only have the first; if the settings were changed during such a series, its curves that no longer match are skipped on import.
 - The data stays in the browser on that computer until exported; nothing is uploaded.
 
 **2. Train (once, maintainer)**
@@ -90,6 +92,7 @@ node web-alpha/ml/train.js data/*.ivtrain                   # writes web-alpha/m
 node web-alpha/ml/train.js data/*.ivtrain --out /tmp/try    # inspect first without replacing the shipped model
 ```
 - Model: one ridge regression per boundary that learns the **corrections people make to the rule-based proposal**, in units of Te. It is small (a few kB) and explainable.
+- **One model for all gases and probes.** The corrections are in units of Te and the currents only enter as ratios, so the probe area drops out; the ion mass is an input of the model (it changes Vp − Vf and the ion/electron current ratio). Mix the gases and probes you use in the 200 curves. The report shows the accuracy per ion species and per probe: if one group is clearly worse, collect more curves of it. On synthetic Ar⁺/He⁺/Kr⁺ data, one shared model was as good or better for every gas than separate models trained per gas on a third of the curves each. The model assumes a cylindrical probe in the OML regime, like the rest of the analysis.
 - The script validates by **cross-validation** (held-out curves) and corrects only the boundaries where the model beats the rules. `training-report.md` compares rules and model: distance of each boundary to the reviewers' choice, and the resulting Te and Vp errors. **Ship the model only if it is clearly better than the rules.**
 - To try a model in the app before shipping: *Training α → Load model file for testing…* (until the page is reloaded).
 
