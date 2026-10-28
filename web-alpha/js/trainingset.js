@@ -50,42 +50,14 @@
   async function remove(id) { await tx("readwrite", (s) => (s ? s.delete(id) : memory.delete(id))); changed(); }
   async function clear() { await tx("readwrite", (s) => (s ? s.clear() : memory.clear())); changed(); }
 
-  /** Simple content hash, so the same curve reviewed twice replaces the older sample. */
-  function hash(text) {
-    let h1 = 0x811c9dc5, h2 = 0x01000193;
-    for (let i = 0; i < text.length; i++) { const c = text.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619); h2 = Math.imul(h2 + c, 2246822519); }
-    return ((h1 >>> 0).toString(16) + (h2 >>> 0).toString(16)).padStart(16, "0");
-  }
-
-  const round = (a) => Array.from(a, (v) => (Number.isFinite(v) ? Number(v.toPrecision(7)) : null));
-  const plain = (o) => JSON.parse(JSON.stringify(o, (k, v) => (typeof v === "number" && !Number.isFinite(v) ? null : v)));
-
   /**
-   * Adds a reviewed curve. review = {file, x, imean, params, results, area, xkey}.
+   * Adds a reviewed curve. review = {file, x, imean, params, results, area, xkey, scans}.
    * Skipped when collecting is off or the curve was marked not analysable.
+   * The same curve reviewed again replaces the older sample (same id).
    */
   async function addReview(review) {
     if (!collecting() || !review.params || review.params.analysable === false) return false;
-    const snap = IV.app.settingsSnapshot();
-    const V = round(review.x), I = round(review.imean);
-    const r = review.results;
-    const sample = {
-      format: "ivcurve-training-sample", format_version: 1,
-      id: hash(`${review.file}|${V.join(",")}|${I.join(",")}`),
-      added_at: new Date().toISOString(), app_version: IV.APP_VERSION,
-      source: {
-        file: review.file, xkey: review.xkey, scans: review.scans || null,
-        probe: { diameter_mm: Number(snap.diameter), length_mm: Number(snap.length), area_m2: review.area },
-        ion: { species: snap.ionGas, mass_amu: Number(snap.ionMass) },
-        data_range: snap.crop,
-      },
-      curve: { V, I },
-      human: {
-        params: plain(review.params),
-        results: plain({ Te_eV: r.Te_eV, Vp: r.Vp, Vf: r.Vf, ne_m3: r.ne_m3, Vp_dIdV: r.Vp_dIdV, Vp_intersection: r.Vp_intersection }),
-      },
-    };
-    await put(sample);
+    await put(IV.ml.makeSample({ ...review, settings: IV.app.settingsSnapshot(), appVersion: IV.APP_VERSION }));
     return true;
   }
 
@@ -97,13 +69,27 @@
     return samples.length;
   }
 
-  /** Adds the samples of an .ivtrain file (same curves are not duplicated). */
+  /**
+   * Imports an .ivtrain file (all its samples) or an .ivbatch file (only the
+   * curves a person reviewed and accepted). Same curves are not duplicated.
+   * Returns {added, skipped: [{file, reason}], kind}.
+   */
   async function importText(text) {
-    const data = JSON.parse(text);
-    if (!data || data.format !== "ivcurve-training-set") throw new Error("This is not a training set (.ivtrain).");
-    for (const s of data.samples) await tx("readwrite", (st) => (st ? st.put(s) : memory.set(s.id, s)));
+    let data;
+    try { data = JSON.parse(text); } catch (_) { throw new Error("This file is not a training set (.ivtrain) or a saved batch (.ivbatch)."); }
+    let samples, skipped = [], kind;
+    if (data && data.format === "ivcurve-training-set") {
+      samples = data.samples; kind = "training set";
+    } else if (data && data.format === "ivcurve-batch") {
+      ({ samples, skipped } = IV.ml.samplesFromBatch(data)); kind = "batch";
+    } else {
+      throw new Error("This file is not a training set (.ivtrain) or a saved batch (.ivbatch).");
+    }
+    const before = await count();
+    for (const s of samples) await tx("readwrite", (st) => (st ? st.put(s) : memory.set(s.id, s)));
     changed();
-    return data.samples.length;
+    const after = await count();
+    return { added: after - before, already: samples.length - (after - before), skipped, kind };
   }
 
   function collecting() {

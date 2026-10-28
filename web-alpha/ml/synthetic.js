@@ -20,6 +20,7 @@ const e = N.E_CHARGE, me = N.M_E;
 const D_MM = 0.15, L_MM = 10;
 const AREA = Math.PI * D_MM * 1e-3 * L_MM * 1e-3;
 const AR = 39.948;
+const GASES = [["Ar⁺", 39.948], ["He⁺", 4.0026], ["Kr⁺", 83.798]];
 
 function rng(seed) {
   let s = seed >>> 0;
@@ -28,10 +29,10 @@ function rng(seed) {
   return { u, g, pick: (a, b) => a + (b - a) * u() };
 }
 
-function curve(r) {
+function curve(r, mass = AR) {
   const Te = r.pick(1, 8), Vp = r.pick(5, 25), n = 10 ** r.pick(15.3, 16.7);
   const vmin = Vp - r.pick(45, 80), vmax = Vp + r.pick(8, 20), npts = Math.round(r.pick(300, 1500));
-  const mi = AR * N.AMU, Ie0 = AREA * n * e * Math.sqrt((e * Te) / (2 * Math.PI * me));
+  const mi = mass * N.AMU, Ie0 = AREA * n * e * Math.sqrt((e * Te) / (2 * Math.PI * me));
   const sigma = Ie0 * 10 ** r.pick(-4, -2.3);
   const V = N.linspace(vmin, vmax, npts);
   const I = V.map((v) => -AREA * n * e * (Math.SQRT2 / Math.PI) * Math.sqrt(Math.max((e * (Vp - v)) / mi, 0))
@@ -39,10 +40,11 @@ function curve(r) {
   return { V, I, truth: { Te, Vp, n } };
 }
 
-/** One reviewed sample in the .ivtrain format, or null if the rules cannot handle the curve. */
-function sample(index, seed = 1000) {
+/** One reviewed sample in the .ivtrain format, or null if the rules cannot handle the curve. mixed: Ar⁺/He⁺/Kr⁺ in turn. */
+function sample(index, seed = 1000, { mixed = false } = {}) {
   const r = rng(seed + index * 7919);
-  const c = curve(r);
+  const [species, mass] = mixed ? GASES[index % GASES.length] : GASES[0];
+  const c = curve(r, mass);
   let rule;
   try { rule = A.proposeOML(c.V, c.I, AREA); } catch (_) { return null; }
   const { Te, Vp } = c.truth;
@@ -64,15 +66,15 @@ function sample(index, seed = 1000) {
     format: "ivcurve-training-sample", format_version: 1, id: `synthetic-${seed}-${index}`, added_at: new Date().toISOString(),
     app_version: "synthetic",
     source: { file: `synthetic_${index}.lda`, xkey: "VData", synthetic: true, truth: c.truth,
-      probe: { diameter_mm: D_MM, length_mm: L_MM, area_m2: AREA }, ion: { species: "Ar⁺", mass_amu: AR } },
+      probe: { diameter_mm: D_MM, length_mm: L_MM, area_m2: AREA }, ion: { species, mass_amu: mass } },
     curve: { V: Array.from(c.V), I: Array.from(c.I) },
     human: { params: human.params, results: pick(human.results) },
   };
 }
 
-function samples(count, seed) {
+function samples(count, seed, opts) {
   const out = [];
-  for (let i = 0; out.length < count && i < count * 3; i++) { const s = sample(i, seed); if (s) out.push(s); }
+  for (let i = 0; out.length < count && i < count * 3; i++) { const s = sample(i, seed, opts); if (s) out.push(s); }
   return out;
 }
 

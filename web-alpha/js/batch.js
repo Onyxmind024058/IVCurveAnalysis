@@ -97,7 +97,7 @@
       const model = batch.proposalSource === "model" ? IV.models.active() : null;
       let chosen = fromRules();
       if (model) {
-        const prop = IV.ml.proposeWithModel(model, x, imean, area);
+        const prop = IV.ml.proposeWithModel(model, x, imean, area, IV.app.ionMass());
         IV.app.addDerived(prop.results, area);
         const flags = A.qualityFlags(prop.results, prop.results);
         chosen = flags.length <= chosen.flags.length ? { ...prop, flags }
@@ -161,6 +161,8 @@
           try { flags = A.qualityFlags({ ...r, diag: A.runOMLSteps(curve.x, curve.imean, area, r.params).diag }, r); } catch (_) { /* keep empty */ }
         }
         Object.assign(item, {
+          // the settings this curve was reviewed with (probe, ion, x axis, data range)
+          settings: IV.app.settingsSnapshot(),
           results: r, params: r.params, flags, reviewed: true,
           status: r.params && r.params.analysable === false ? "rejected" : "accepted",
         });
@@ -228,6 +230,7 @@
         name: it.name, param: it.param, status: it.status, reviewed: it.reviewed, flags: it.flags || [],
         scans: it.scans.map((s) => plain({ id: s.id, label: s.label ?? null, VData: s.VData, RefData: s.RefData, IData: s.IData })),
         params: plain(it.params), results: plain(it.results), proposal: plain(it.proposal),
+        settings: it.settings ? plain(it.settings) : null,
       })),
     };
     IV.ui.download(`batch_${new Date().toISOString().slice(0, 10)}.ivbatch`, JSON.stringify(data), "application/json");
@@ -245,6 +248,7 @@
       batch.items.push({
         id: nextId++, name: it.name, param: it.param ?? "", status: it.status, reviewed: !!it.reviewed, flags: it.flags || [],
         scans, params: toObj(it.params), results: toObj(it.results), proposal: toObj(it.proposal),
+        settings: it.settings || null,
       });
     }
     IV.ui.toast(`Batch opened: ${data.items.length} files (saved ${new Date(data.saved_at).toLocaleString()}).`);

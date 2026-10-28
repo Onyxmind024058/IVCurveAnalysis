@@ -38,8 +38,9 @@
   const FEATURES = [
     "log Te_rules", "(Vp_didv − Vf)/Te", "(Vmax − Vp_didv)/Te", "(Vp_didv − Vmin)/Te", "(Vp_int − Vp_didv)/Te",
     "voltage step/Te", "smoothing width/Te", "R² transition", "R² ion fit", "log10 noise", "transition width/Te",
-    "(trans_min − Vf)/Te", "(Vp_didv − trans_max)/Te", "log10 |Iis/Ies|",
+    "(trans_min − Vf)/Te", "(Vp_didv − trans_max)/Te", "log10 |Iis/Ies|", "log ion mass (amu)",
   ];
+  const DEFAULT_MASS = 39.948;  // Ar⁺, for samples without an ion mass
 
   const clone = (p) => JSON.parse(JSON.stringify(p));
 
@@ -50,8 +51,12 @@
   /** Rule proposal for a curve; returns {params, results} with results.diag, or throws. */
   const ruleProposal = (V, I, area) => A.proposeOML(V, I, area);
 
-  /** Dimensionless description of a curve and its rule proposal (same order as FEATURES). */
-  function featuresOf(V, I, rule) {
+  /**
+   * Dimensionless description of a curve and its rule proposal (same order as FEATURES).
+   * Currents only enter as ratios, so the probe area drops out; the ion mass is
+   * an input because it changes Vp − Vf and the ion/electron current ratio.
+   */
+  function featuresOf(V, I, rule, massAmu = DEFAULT_MASS) {
     const { V: v, I: cur } = N.sortedCurve(V, I);
     const r = rule.results, d = r.diag, p = rule.params;
     const Te = r.Te_eV;
@@ -75,6 +80,7 @@
       (p.log.tmin - r.Vf) / Te,
       (p.vp1 - p.log.tmax) / Te,
       Math.log10(Math.max(Math.abs(r.Iis_A / r.Ies_A), 1e-12)),
+      Math.log(massAmu > 0 ? massAmu : DEFAULT_MASS),
     ];
     return f.map((x) => (Number.isFinite(x) ? x : 0));
   }
@@ -93,7 +99,8 @@
         if (!s.human || !s.human.params || s.human.params.analysable === false) throw new Error("not analysable");
         const V = Float64Array.from(s.curve.V), I = Float64Array.from(s.curve.I);
         const rule = ruleProposal(V, I, s.source.probe.area_m2);
-        rows.push({ x: featuresOf(V, I, rule), y: targetsOf(rule, s.human.params), rule, sample: s, V, I });
+        const mass = (s.source.ion && s.source.ion.mass_amu) || DEFAULT_MASS;
+        rows.push({ x: featuresOf(V, I, rule, mass), y: targetsOf(rule, s.human.params), rule, sample: s, V, I });
       } catch (e) {
         skipped.push({ id: s.id, file: s.source && s.source.file, reason: e.message });
       }
@@ -212,7 +219,19 @@
       for (const r of test) held.push({ row: r, deltas: gate(predictRidge(fit, r.x), use) });
     }
     const map = new Map(held.map((h) => [h.row, h.deltas]));
-    return scoreRows(held.map((h) => h.row), (row) => map.get(row));
+    const score = scoreRows(held.map((h) => h.row), (row) => map.get(row));
+    // the same held-out predictions, split by ion species and by probe
+    const groupBy = (key) => {
+      const groups = new Map();
+      for (const h of held) { const k = key(h.row.sample.source); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(h.row); }
+      return [...groups].map(([name, rows]) => {
+        const s = scoreRows(rows, (row) => map.get(row));
+        return { name, n: rows.length, te_error_pct: s.te_error_pct, vp_error_V: s.vp_error_V };
+      });
+    };
+    score.by_ion = groupBy((src) => (src.ion && src.ion.species) || "?");
+    score.by_probe = groupBy((src) => (src.probe ? `${src.probe.diameter_mm} × ${src.probe.length_mm} mm` : "?"));
+    return score;
   }
 
   /**
@@ -259,9 +278,9 @@
    * to the rules if the corrected regions cannot be fitted.
    * Returns {params, results, source: "model" | "rules (model failed)"}.
    */
-  function proposeWithModel(model, V, I, area) {
+  function proposeWithModel(model, V, I, area, massAmu = DEFAULT_MASS) {
     const rule = ruleProposal(V, I, area);
-    const deltas = gate(predictRidge(model.fit, featuresOf(V, I, rule)), model.fit.use);
+    const deltas = gate(predictRidge(model.fit, featuresOf(V, I, rule, massAmu)), model.fit.use);
     const p = correctedParams(rule, deltas);
     try {
       const full = A.withIntersection(V, I, p);
@@ -271,10 +290,93 @@
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Training samples (shared by the in-app collection and the imports)
+  // ---------------------------------------------------------------------------
+
+  const round7 = (a) => Array.from(a, (v) => (Number.isFinite(v) ? Number(v.toPrecision(7)) : null));
+
+  /** Content hash: the same curve from the same file gets the same id, so it is never counted twice. */
+  function sampleId(file, V, I) {
+    const text = `${file}|${V.join(",")}|${I.join(",")}`;
+    let h1 = 0x811c9dc5, h2 = 0x01000193;
+    for (let i = 0; i < text.length; i++) { const c = text.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619); h2 = Math.imul(h2 + c, 2246822519); }
+    return ((h1 >>> 0).toString(16) + (h2 >>> 0).toString(16)).padStart(16, "0");
+  }
+
+  const jsonSafe = (o) => JSON.parse(JSON.stringify(o, (k, v) => (typeof v === "number" && !Number.isFinite(v) ? null : v)));
+
+  /** A training sample from a reviewed curve: x/imean = the analysed mean curve. */
+  function makeSample({ file, x, imean, params, results, area, xkey, scans, settings, appVersion, addedAt }) {
+    const V = round7(x), I = round7(imean);
+    const num = (v) => (v === null || v === undefined || v === "" ? NaN : Number(v));
+    return {
+      format: "ivcurve-training-sample", format_version: 1,
+      id: sampleId(file, V, I),
+      added_at: addedAt || new Date().toISOString(), app_version: appVersion,
+      source: {
+        file, xkey, scans: scans || null,
+        probe: { diameter_mm: num(settings.diameter), length_mm: num(settings.length), area_m2: area },
+        ion: { species: settings.ionGas, mass_amu: num(settings.ionMass) },
+        data_range: settings.crop || null,
+      },
+      curve: { V, I },
+      human: {
+        params: jsonSafe(params),
+        results: jsonSafe({ Te_eV: results.Te_eV, Vp: results.Vp, Vf: results.Vf, ne_m3: results.ne_m3, Vp_dIdV: results.Vp_dIdV, Vp_intersection: results.Vp_intersection }),
+      },
+    };
+  }
+
+  const reviveArray = (a) => Float64Array.from(a || [], (v) => (v === null ? NaN : v));
+
+  /**
+   * Training samples from a saved batch (.ivbatch): only curves a person
+   * reviewed and accepted. Each curve is rebuilt with the settings it was
+   * reviewed with (its own snapshot, or the batch's for older files), and the
+   * stored regions must reproduce the stored results — otherwise it is skipped.
+   * Returns {samples, skipped: [{file, reason}]}.
+   */
+  function samplesFromBatch(data) {
+    if (!data || data.format !== "ivcurve-batch") throw new Error("This is not a saved batch (.ivbatch).");
+    const samples = [], skipped = [];
+    for (const it of data.items || []) {
+      const skip = (reason) => skipped.push({ file: it.name, reason });
+      if (it.status !== "accepted" || !it.reviewed) {
+        skip({ auto: "accepted without review", check: "not reviewed (⚠ check)", good: "not reviewed", failed: "not reviewed (✗ failed)", rejected: "marked not analysable", pending: "not analysed" }[it.status] || `status “${it.status}”`);
+        continue;
+      }
+      if (!it.params || it.params.analysable === false || !it.results) { skip("no reviewed regions"); continue; }
+      const settings = it.settings || data.settings;
+      if (!settings) { skip("no settings saved"); continue; }
+      try {
+        const scans = it.scans.map((s) => ({ id: s.id, label: typeof s.label === "string" ? s.label : undefined,
+          VData: reviveArray(s.VData), RefData: reviveArray(s.RefData), IData: reviveArray(s.IData) }));
+        const crop = settings.crop ? { ...settings.crop, from: num0(settings.crop.from, -Infinity), to: num0(settings.crop.to, Infinity) } : null;
+        const curve = N.curveWith(scans, settings.xaxis || "VData", crop);
+        const area = Math.PI * Number(settings.diameter) * 1e-3 * Number(settings.length) * 1e-3;
+        // the stored regions must give the stored results on this curve
+        const check = A.runOMLSteps(curve.x, curve.imean, area, it.params);
+        const same = (a, b) => Math.abs(a - b) <= 1e-6 * Math.max(Math.abs(a), Math.abs(b), 1e-12);
+        if (!same(check.Te_eV, it.results.Te_eV) || !same(check.Vp, it.results.Vp)) {
+          skip("the saved regions do not reproduce the saved results (settings changed after the review?)");
+          continue;
+        }
+        samples.push(makeSample({ file: it.name, x: curve.x, imean: curve.imean, params: it.params, results: it.results,
+          area, xkey: curve.xkey, scans: scans.length, settings, appVersion: data.app_version, addedAt: data.saved_at }));
+      } catch (e) {
+        skip(e.message);
+      }
+    }
+    return { samples, skipped };
+  }
+  const num0 = (v, dflt) => (v === null || v === undefined ? dflt : Number(v));
+
   const api = {
     MODEL_FORMAT, MODEL_VERSION, TARGETS: TARGETS.map(([n]) => n), FEATURES,
     featuresOf, targetsOf, prepare, fitRidge, predictRidge, correctedParams, evaluateParams,
     crossValidate, scoreRows, train, checkModel, proposeWithModel,
+    sampleId, makeSample, samplesFromBatch,
   };
   if (root.IV) root.IV.ml = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
