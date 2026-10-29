@@ -2,7 +2,9 @@
 
 ### ▶ Open the app: **[onyxmind024058.github.io/IVCurveAnalysis/web/](https://onyxmind024058.github.io/IVCurveAnalysis/web/)**
 
-🧪 Beta for **collecting training data for machine learning**: [onyxmind024058.github.io/IVCurveAnalysis/web-beta/](https://onyxmind024058.github.io/IVCurveAnalysis/web-beta/), see [Beta: machine learning](#beta-machine-learning). (The old pre-alpha address `/web-alpha/` forwards there.)
+🧪 Beta for **collecting training data for machine learning**: [onyxmind024058.github.io/IVCurveAnalysis/web-beta/](https://onyxmind024058.github.io/IVCurveAnalysis/web-beta/), see [Beta: machine learning](#beta-machine-learning). 
+
+🤖 Pre-alpha for **AI analysis with a Mistral agent**: [onyxmind024058.github.io/IVCurveAnalysis/web-alpha/](https://onyxmind024058.github.io/IVCurveAnalysis/web-alpha/), see [Pre-alpha: AI analysis](#pre-alpha-ai-analysis). Needs your own Mistral API key; not for results.
 
 A browser application for loading Langmuir probe measurements (`.lda` or CSV files), plotting individual and averaged I–V curves, and extracting plasma parameters using automatic OML-style analysis, manual OML analysis, EEDF/EEPF calculation, and an EPFL two-fluid model.
 
@@ -99,6 +101,16 @@ node web-beta/ml/train.js data/*.ivtrain --out /tmp/try    # inspect first witho
 
 **Pipeline check with synthetic data:** `node web-beta/ml/synthetic.js 200 > synthetic.ivtrain` makes curves labelled by a simulated reviewer with known habits. Trained on them, the model reduces the error of the dI/dV Vp line from ≈ 1.3 V to ≈ 0.05 V and the Te error against the reviewer from ≈ 0.6 % to ≈ 0.05 % on curves it never saw. Real curves will be harder; the report will tell.
 
+## Pre-alpha: AI analysis
+
+`web-alpha/` is the beta plus **AI analysis α**: a Mistral model analyses the loaded curve like a person in the manual OML window.
+
+- **Skill.** The agent follows `skills/langmuir-probe-analysis/SKILL.md` (copied to `web-alpha/agent/SKILL.md`; a test keeps the two identical): the OML procedure, the Vp check in volts (≤ 2 V good; 2–5 V ok only if Te from Vp − Vf confirms the fitted Te; > 5 V review by eye), the Te cross-check, the quality flags and how to report. Another skill file (.md) can be loaded in the window; it is kept in that browser. The same folder has the Python pipeline the skill describes, for use outside the app.
+- **Tools, not guesses.** The model cannot compute anything itself. It calls the app's own analysis through five tools (`web-alpha/js/agent-tools.js`): curve overview, the rule-based proposal, evaluation of chosen regions (both Vp, Vp check, Te, Te from Vp − Vf, ne, nᵢ, R², quality flags), a look at ln(Ie) in a window, and submit. Every number shown comes from the app; the agent's report is shown separately.
+- **Review.** *Open in manual OML to check…* starts the manual window from the agent's regions; accepting there counts as a review (and adds the curve to the training data). *Show in main window* adds the result marked "not reviewed".
+- **Key and privacy.** Each user enters their own Mistral API key (*API key…*); it is stored only in that browser and sent only to `api.mistral.ai`. When an analysis is started, the mean curve (as numbers returned by the tools), the file name, the probe/gas settings and the skill are sent to Mistral; the app asks once before the first analysis.
+- Models: Mistral Large (default), Medium, Small. A run takes about 5–10 requests.
+
 ## Checking the physics (automatic tests)
 
 `web/tests/numerics.test.js` checks the analysis code on synthetic curves with known answers (Te, nₑ, nᵢ, Iis at Vf, EEDF density, Te from Vp − Vf, averaging, EPFL). With [Node.js](https://nodejs.org) 18 or newer, from the repository folder:
@@ -106,6 +118,7 @@ node web-beta/ml/train.js data/*.ivtrain --out /tmp/try    # inspect first witho
 ```bash
 node --test web/tests/*.test.js         # stable
 node --test web-beta/tests/*.test.js    # beta, incl. the model
+node --test web-alpha/tests/*.test.js   # pre-alpha, incl. the AI agent (with a fake Mistral)
 ```
 
 All tests should report `ok`. Run them after every change to the analysis code.
