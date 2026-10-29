@@ -1,5 +1,5 @@
 /* =============================================================================
-   Training set (pre-alpha): reviewed curves kept in this browser (IndexedDB)
+   Training set (beta): reviewed curves kept in this browser (IndexedDB)
    until they are exported as one .ivtrain file for training.
 
    Sample = the analysed mean curve + the regions the reviewer chose (manual
@@ -8,6 +8,7 @@
    ============================================================================= */
 (function (IV) {
   "use strict";
+  // names kept from the pre-alpha (same origin), so curves collected there stay available
   const DB = "ivcurve-alpha-training", STORE = "samples", GOAL = 200;
   const COLLECT_KEY = "ivcurve-alpha.collect";
 

@@ -1,5 +1,5 @@
 /* =============================================================================
-   Automatic fit-region proposal and quality check (beta, "Level 1").
+   Automatic fit-region proposal and quality check ("Level 1").
 
    - runOMLSteps(): the manual OML analysis without its window: the same
      smoothing, ion fit, dIe/dV, log(Ie) fits and final formulas, driven by a
@@ -40,44 +40,6 @@
     return { xs, ys };
   }
 
-  /** Smoothing + ion fit (I_i^2 = aV + b, signed sqrt) + electron current, as in the manual window. */
-  function electronCurrent(v, cur, p) {
-    const n = v.length;
-    const Ismooth = N.smoothSignal(cur, p.smooth.method, N.makeOdd(p.smooth.window), p.smooth.order);
-    const lo = Math.min(p.ion.vmin, p.ion.vmax), hi = Math.max(p.ion.vmin, p.ion.vmax);
-    const xi = [], yi = [], is = [];
-    for (let k = 0; k < n; k++) {
-      if (v[k] >= lo && v[k] <= hi && Number.isFinite(Ismooth[k])) { xi.push(v[k]); is.push(Ismooth[k]); yi.push(Ismooth[k] ** 2); }
-    }
-    if (xi.length < 2) throw new Error("Not enough points in the ion fit region.");
-    let signI = N.sign(N.nanmedian(is));
-    if (signI === 0) signI = -1;
-    const ionCoeff = N.polyfit(xi, yi, 1);
-    const Iion = Float64Array.from(v, (x) => signI * Math.sqrt(Math.max(N.polyval(ionCoeff, x), 0)));
-    const Ie = Float64Array.from(Ismooth, (x, k) => x - Iion[k]);
-    return { Ismooth, Iion, Ie, ionCoeff, signI, xi, yi };
-  }
-
-  /** Vp where the transition and saturation fits of ln(Ie) meet (closest approach on a 1000-point grid, as in the manual window). */
-  function intersectionVp(v, Ie, p) {
-    const trans = N.fitLineRegion(v, Ie, p.log.tmin, p.log.tmax, true, true);
-    const sat = N.fitLineRegion(v, Ie, p.log.smin, p.log.smax, true, true);
-    const xfit = N.linspace(N.nanmin(v), N.nanmax(v), 1000);
-    let best = 0, bestD = Infinity;
-    for (let k = 0; k < xfit.length; k++) {
-      const dd = Math.abs(N.polyval(sat, xfit[k]) - N.polyval(trans, xfit[k]));
-      if (dd < bestD) { bestD = dd; best = k; }
-    }
-    return xfit[best];
-  }
-
-  /** Params with log.vp2 recomputed from their regions (after regions were moved); throws if the fits fail. */
-  function withIntersection(V, I, p) {
-    const { V: v, I: cur } = N.sortedCurve(V, I);
-    const { Ie } = electronCurrent(v, cur, p);
-    return { ...p, log: { ...p.log, vp2: intersectionVp(v, Ie, p) } };
-  }
-
   /**
    * The manual OML analysis for given params (same order and formulas as the
    * manual window). Returns results in the format the manual window sends,
@@ -90,11 +52,23 @@
     const nan = { Vp: NaN, Vf: NaN, Te_eV: NaN, ne_m3: NaN, Iis_A: NaN, Ies_A: NaN, ion_i2_a: NaN, ion_i2_b: NaN, Vp_dIdV: NaN, Vp_intersection: NaN };
     if (p.analysable === false) return { method: "Manual OML", ...nan, params: p, diag: { analysable: false } };
 
+    const Ismooth = N.smoothSignal(cur, p.smooth.method, N.makeOdd(p.smooth.window), p.smooth.order);
     const Vf = p.ion.vf;
-    // smoothing, ion fit I_i^2 = aV + b (signed sqrt), electron current
-    const { Ie, ionCoeff, signI, xi, yi } = electronCurrent(v, cur, p);
+
+    // ion fit: I_i^2 = aV + b in the ion region, signed sqrt reconstruction
+    const lo = Math.min(p.ion.vmin, p.ion.vmax), hi = Math.max(p.ion.vmin, p.ion.vmax);
+    const xi = [], yi = [], is = [];
+    for (let k = 0; k < n; k++) {
+      if (v[k] >= lo && v[k] <= hi && Number.isFinite(Ismooth[k])) { xi.push(v[k]); is.push(Ismooth[k]); yi.push(Ismooth[k] ** 2); }
+    }
+    if (xi.length < 2) throw new Error("Not enough points in the ion fit region.");
+    let signI = N.sign(N.nanmedian(is));
+    if (signI === 0) signI = -1;
+    const ionCoeff = N.polyfit(xi, yi, 1);
+    const Iion = Float64Array.from(v, (x) => signI * Math.sqrt(Math.max(N.polyval(ionCoeff, x), 0)));
     const Iis = N.ionCurrentAt(Vf, ionCoeff[0], ionCoeff[1], signI);
 
+    const Ie = Float64Array.from(Ismooth, (x, k) => x - Iion[k]);
     const dIdV = N.gradient(Ie, v);
     const dIdVs = N.smoothSignal(dIdV, p.didv.method, N.makeOdd(p.didv.window), p.didv.order);
     const Vp1 = p.vp1;
@@ -243,7 +217,7 @@
 
   /**
    * Reasons to look at a curve. r: results with .diag; extra: {ni_m3, Te_VpVf_OML_eV, Te_VpVf_planar_eV}.
-   * Thresholds are deliberately simple (beta) and listed here so they can be tuned.
+   * Thresholds are deliberately simple and listed here so they can be tuned.
    */
   // Vp check (dI/dV vs intersection) uses N.vpCheck: flagged when it says "review".
   const LIMITS = { r2Trans: 0.995, r2Ion: 0.9, minSatPts: 5, edgeFrac: 0.03, teMin: 0.2, teMax: 30, niRatio: [0.2, 5] };
@@ -271,7 +245,7 @@
     return f;
   }
 
-  const api = { rSquared, electronCurrent, intersectionVp, withIntersection, runOMLSteps, straightestWindow, proposeOML, qualityFlags, LIMITS };
+  const api = { rSquared, runOMLSteps, straightestWindow, proposeOML, qualityFlags, LIMITS };
   if (root.IV) root.IV.auto = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

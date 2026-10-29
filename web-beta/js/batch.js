@@ -1,5 +1,5 @@
 /* =============================================================================
-   Assisted batch review (beta).
+   Assisted batch review.
 
    1. Add a series of .lda/.csv files; give each one a parameter value.
    2. Every curve gets automatic fit-region proposals and a status:
@@ -35,7 +35,7 @@
     ["Te_VpVf_OML_eV", "Te from Vp − Vf, OML (eV)"], ["Iis_A", "Iis at Vf (A)"], ["Ies_A", "Ies (A)"],
   ];
 
-  const batch = { paramName: "Parameter", items: [], csvMapping: null, startFrom: "proposal", variable: "Te_eV", selected: -1 };
+  const batch = { paramName: "Parameter", items: [], csvMapping: null, startFrom: "proposal", proposalSource: "rules", variable: "Te_eV", selected: -1 };
   let nextId = 1;
   let ui = null;  // open window, if any
 
@@ -87,10 +87,26 @@
     try {
       const { x, imean } = IV.app.curveFor(item.scans);
       const area = IV.app.probeArea();
-      const { params, results } = A.proposeOML(x, imean, area);
-      IV.app.addDerived(results, area);
+      // proposals from the trained model when chosen (beta), else from the rules;
+      // if the model's proposal looks worse (more warnings) than the rules', keep the rules'
+      const fromRules = () => {
+        const prop = { ...A.proposeOML(x, imean, area), source: "rules" };
+        IV.app.addDerived(prop.results, area);
+        return { ...prop, flags: A.qualityFlags(prop.results, prop.results) };
+      };
+      const model = batch.proposalSource === "model" ? IV.models.active() : null;
+      let chosen = fromRules();
+      if (model) {
+        const prop = IV.ml.proposeWithModel(model, x, imean, area, IV.app.ionMass());
+        IV.app.addDerived(prop.results, area);
+        const flags = A.qualityFlags(prop.results, prop.results);
+        chosen = flags.length <= chosen.flags.length ? { ...prop, flags }
+          : { ...chosen, source: "rules (the model's proposal had more warnings)" };
+      }
+      const { params, results, source } = chosen;
       item.proposal = params;
-      item.proposalFlags = A.qualityFlags(results, results);
+      item.proposalSource = source;
+      item.proposalFlags = chosen.flags;
       item.error = null;
       if (!item.reviewed) {
         item.params = params;
@@ -150,6 +166,11 @@
           results: r, params: r.params, flags, reviewed: true,
           status: r.params && r.params.analysable === false ? "rejected" : "accepted",
         });
+        // a curve reviewed and accepted by a person is training data (beta)
+        if (item.status === "accepted") {
+          IV.training.addReview({ file: item.name, x: curve.x, imean: curve.imean, xkey: curve.xkey,
+            params: r.params, results: r, area, scans: item.scans.length });
+        }
         render();
         setTimeout(() => reviewNext(index), 0);
       },
@@ -259,7 +280,7 @@
 
   function openBatch() {
     if (ui) return;
-    const d = IV.ui.openDialog({ title: "Batch review (beta)", onClose: () => { ui = null; } });
+    const d = IV.ui.openDialog({ title: "Batch review", onClose: () => { ui = null; } });
     d.dlg.classList.add("batch");
     d.foot.remove();
 
@@ -275,6 +296,19 @@
     ]);
     startFrom.value = batch.startFrom;
     startFrom.addEventListener("change", () => { batch.startFrom = startFrom.value; });
+    const hasModel = !!IV.models.active();
+    const source = el("select", { title: "Where the automatic fit regions come from" }, [
+      el("option", { value: "rules", text: "rules" }),
+      el("option", { value: "model", text: hasModel ? `model (${IV.models.label(IV.models.active())})` : "model (none shipped yet)", disabled: !hasModel }),
+    ]);
+    if (!hasModel) batch.proposalSource = "rules";
+    source.value = batch.proposalSource;
+    source.addEventListener("change", () => {
+      batch.proposalSource = source.value;
+      for (const it of batch.items) if (!it.reviewed) analyse(it);
+      render();
+      IV.ui.toast(`Proposals now from the ${source.value}.`);
+    });
 
     const btn = (text, onclick, cls = "") => el(`button.btn${cls}`, { text, onclick });
     const reviewBtn = btn("Review next ▶", () => reviewNext(batch.selected), ".primary");
@@ -286,6 +320,7 @@
       el("span.sep-v"),
       el("div.field", {}, [el("label", { text: "Parameter name:" }), paramName]),
       el("div.field", {}, [el("label", { text: "Start review from:" }), startFrom]),
+      el("div.field", {}, [el("label", { text: "Proposals from:" }), source]),
       el("span.spacer"),
       btn("Save batch", saveBatch), btn("Open batch…", () => fileInput.click()), btn("Export table CSV", exportCSV),
     ]);
@@ -429,7 +464,8 @@
     const st = STATUS[it.status] || STATUS.pending;
     const flags = it.flags || [];
     ui.detail.replaceChildren(
-      el("p", {}, [el(`span.status.${it.status}`, { text: st.text }), " ", st.title]),
+      el("p", {}, [el(`span.status.${it.status}`, { text: st.text }), " ", st.title,
+        it.proposalSource ? el("span.muted", { text: ` · proposal from the ${it.proposalSource}` }) : null]),
       flags.length ? el("ul", {}, flags.map((f) => el("li", { text: f }))) : el("p.muted", { text: "No warnings." }),
       el("p.muted", { text: "Shaded on the plot: transition (left) and saturation (right) fit regions." }),
     );

@@ -11,7 +11,12 @@
    * params (optional): settings returned by an earlier run (results.params);
    * the window then replays those steps and opens on the last one reached.
    */
-  function openManualOML({ V, I, probeArea, ionMass, label = "Mean curve", params, onResults }) {
+  /**
+   * Batch review options: acceptLabel replaces the send button text, onSkip
+   * adds a "Skip" button (close without a result), title replaces the window title.
+   */
+  function openManualOML({ V, I, probeArea, ionMass, label = "Mean curve", params, onResults,
+    acceptLabel = "Send results to main window and close", onSkip, title, onClose }) {
     const { V: v, I: cur } = N.sortedCurve(V, I);
     const n = v.length;
     const vMin = N.nanmin(v), vMax = N.nanmax(v);
@@ -24,7 +29,7 @@
       reached: 0,  // furthest step completed with "Next" (5 = finished)
     };
 
-    const d = IV.ui.openDialog({ title: `Manual OML analysis — ${label}` });
+    const d = IV.ui.openDialog({ title: title || `Manual OML analysis — ${label}`, onClose });
     d.foot.remove();
     const tabs = IV.ui.tabs(["Smooth IV", "Vf + ion fit", "dI/dV smooth", "dI/dV Vp", "log(Ie) fits", "Results"],
       (i) => requestAnimationFrame(() => {
@@ -336,10 +341,20 @@
     const table = el("table.data", {}, [el("thead", {}, [el("tr", {}, cols.map((c) => el("th", { text: c })))]), tbody]);
     const teWarningLine = el("p.te-warning");
     const vpWarningLine = el("p.te-warning");
+    // overview: ln(Ie) with both fits and the potentials, so the result can be judged at a glance
+    const overviewEl = el("div");
     tabs.panels[5].append(
-      el("div", { style: "padding:14px;flex:1;overflow:auto" }, [table, vpWarningLine, teWarningLine]),
-      el("div.controls", {}, [el("span.spacer"), nextBtn("Send results to main window and close", sendResults)]),
+      el("div", { style: "padding:14px 14px 0;overflow:auto" }, [table, vpWarningLine, teWarningLine]),
+      el("div.single-plot", {}, [overviewEl]),
+      el("div.controls", {}, [
+        el("span.spacer"),
+        onSkip ? el("button.btn", { text: "Skip for now", onclick: () => { d.close(); onSkip(); } }) : null,
+        nextBtn(acceptLabel, sendResults),
+      ]),
     );
+
+    const overview = new IV.Plot(overviewEl, { filename: "overview" });
+    d.plots.push(overview);
 
     function updateResultsTable() {
       // cross-check of Te from the potential difference (same rule as the results cards)
@@ -353,6 +368,26 @@
       teWarningLine.textContent = IV.ui.teWarning(s.Te_eV, t.Te_OML_eV, t.Te_planar_eV);
       vpWarningLine.textContent = vc.text;
       vpWarningLine.classList.toggle("fair", vc.level === "ok");
+      drawOverview();
+    }
+
+    function drawOverview() {
+      if (!s.Ie || !Number.isFinite(s.Te_eV)) {
+        overview.render({ traces: [], text: analysable.value ? "Finish the analysis to see the overview" : "Marked as not analysable" });
+        return;
+      }
+      const xs = [], ys = [];
+      for (let k = 0; k < n; k++) if (s.Ie[k] > 0) { xs.push(v[k]); ys.push(Math.log(s.Ie[k])); }
+      const traces = [{ x: xs, y: ys, name: "ln(Ie)" }];
+      if (s.transCoeff) traces.push({ x: xfit, y: N.polyval(s.transCoeff, xfit), name: `transition fit (Te = ${fmtG(s.Te_eV, 3)} eV)`, width: 2, dash: "dash" });
+      if (s.satCoeff) traces.push({ x: xfit, y: N.polyval(s.satCoeff, xfit), name: "saturation fit", width: 2, dash: "dash" });
+      const lo = N.nanmin(ys), hi = N.nanmax(ys), pad = 0.08 * (hi - lo || 1);
+      overview.render({
+        title: "Overview: ln(Ie) and fits", xlabel: "Potential (V)", ylabel: "ln(Ie [A])", traces,
+        yrange: ys.length ? [lo - pad, hi + pad] : undefined,
+        shades: [{ x0: lf.tmin.value, x1: lf.tmax.value }, { x0: lf.smin.value, x1: lf.smax.value }],
+        vlines: [{ x: s.Vf, label: "Vf", dash: "dot" }, { x: s.Vp, label: "Vp", dash: "solid" }],
+      });
     }
 
     function sendResults() {

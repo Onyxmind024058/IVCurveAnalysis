@@ -1,6 +1,6 @@
-/* Fit-region model for the IV Analyser (pre-alpha).
+/* Fit-region model for the IV Analyser (beta).
    No model is shipped yet: reviewed curves are being collected (goal: 200).
-   When they are, run `node web-alpha/ml/train.js data/*.ivtrain` — it replaces
+   When they are, run `node web-beta/ml/train.js data/*.ivtrain` — it replaces
    this file with the trained model. */
 (function (root) {
   "use strict";

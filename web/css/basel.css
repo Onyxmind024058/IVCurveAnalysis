@@ -509,3 +509,43 @@ dialog.win.medium { width: min(1100px, calc(100vw - 32px)); height: min(760px, c
 /* "Try beta" button */
 .btn.try-beta { gap: 7px; }
 .badge.beta { background: var(--red); color: #fff; letter-spacing: .5px; font-size: 10.5px; }
+
+/* ---------- Batch review window ---------- */
+dialog.win.batch { width: min(1500px, calc(100vw - 24px)); height: calc(100vh - 24px); }
+.batch-settings { margin: 0; padding: 6px 12px; font-size: 12px; color: var(--text-lo); background: var(--panel); border-bottom: 1px solid var(--border); }
+.batch-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(320px, 1fr); gap: 8px; padding: 8px; }
+.batch-left { min-height: 0; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.batch-table-wrap { flex: 1; overflow: auto; }
+.batch-right { min-height: 0; display: grid; grid-template-rows: 1fr 1.1fr; gap: 8px; }
+.batch-right .plot-cell { min-height: 0; }
+.batch-right .plot-cell .plot { min-height: 160px; }
+.batch-detail { flex: none; padding: 6px 12px 8px; font-size: 12.5px; max-height: 130px; overflow: auto; border-bottom: 1px solid var(--border); }
+.batch-detail p { margin: 4px 0; }
+.batch-detail ul { margin: 4px 0; padding-left: 18px; }
+.batch-empty { flex: 1; display: grid; place-content: center; text-align: center; gap: 8px; padding: 24px; }
+.batch-empty h3 { font-size: 18px; }
+.batch-empty p { margin: 0; color: var(--text-lo); max-width: 440px; }
+table.batch-table { font-size: 12.5px; }
+table.batch-table th { position: sticky; top: 0; z-index: 1; white-space: nowrap; }
+table.batch-table td { white-space: nowrap; vertical-align: middle; }
+table.batch-table td.file { font-family: var(--font); max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
+table.batch-table tr { cursor: pointer; }
+table.batch-table tr:hover td { background: var(--hover-bg); }
+table.batch-table tr.selected td { background: color-mix(in srgb, var(--mint) 35%, transparent); }
+table.batch-table .param-input { width: 80px; min-height: 24px; padding: 2px 5px; font-family: var(--font-mono); font-size: 12px; }
+table.batch-table .row-actions { display: flex; gap: 2px; }
+table.batch-table th, table.batch-table td { padding: 5px 6px; }
+.btn.small { min-height: 24px; padding: 2px 8px; font-size: 12px; }
+.controls .sep-v { width: 1px; align-self: stretch; background: var(--border); }
+.status { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11.5px; font-weight: 600; font-family: var(--font); white-space: nowrap; }
+.status.good { background: color-mix(in srgb, var(--mint) 55%, transparent); color: var(--text); }
+.status.check { background: color-mix(in srgb, var(--plot-5) 35%, transparent); color: var(--text); }
+.status.failed { background: color-mix(in srgb, var(--red) 25%, transparent); color: var(--red); }
+.status.accepted { background: var(--mint); color: var(--on-mint); }
+.status.auto { border: 1px solid var(--mint-hover); color: var(--text); }
+.status.rejected, .status.pending { background: var(--border); color: var(--text-lo); }
+@media (max-width: 1000px) {
+  .batch-grid { grid-template-columns: 1fr; overflow: auto; }
+  .batch-right { grid-template-rows: 320px 380px; }
+}
+table.batch-table td.vp-poor { color: var(--red); font-weight: 600; }

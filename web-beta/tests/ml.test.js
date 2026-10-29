@@ -1,7 +1,7 @@
 /* =============================================================================
-   Checks for the fit-region model (pre-alpha), on synthetic curves labelled by
+   Checks for the fit-region model (beta), on synthetic curves labelled by
    a simulated reviewer with known habits (ml/synthetic.js).
-       node --test web-alpha/tests/ml.test.js
+       node --test web-beta/tests/ml.test.js
    ============================================================================= */
 "use strict";
 const test = require("node:test");

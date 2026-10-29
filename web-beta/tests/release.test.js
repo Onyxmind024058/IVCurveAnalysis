@@ -15,14 +15,14 @@ const html = fs.readFileSync(path.join(dir, "index.html"), "utf8");
 const version = fs.readFileSync(path.join(dir, "js", "app.js"), "utf8").match(/const APP_VERSION = "([^"]+)"/)[1];
 
 test("all local scripts and stylesheets use ?v=APP_VERSION", () => {
-  const refs = [...html.matchAll(/<(?:script src|link rel="stylesheet" href)="((?:js|css|vendor)\/[^"]+)"/g)].map((m) => m[1]);
+  const refs = [...html.matchAll(/<(?:script src|link rel="stylesheet" href)="((?:js|css|vendor|model)\/[^"]+)"/g)].map((m) => m[1]);
   assert.ok(refs.length >= 10, `found ${refs.length} references`);
   for (const ref of refs) assert.ok(ref.endsWith(`?v=${version}`), `${ref} should end with ?v=${version}`);
 });
 
 test("every versioned file exists and is in the service worker's offline list", () => {
   const sw = fs.readFileSync(path.join(dir, "sw.js"), "utf8");
-  for (const [, file] of html.matchAll(/<(?:script src|link rel="stylesheet" href)="((?:js|css|vendor)\/[^"?]+)\?v=/g)) {
+  for (const [, file] of html.matchAll(/<(?:script src|link rel="stylesheet" href)="((?:js|css|vendor|model)\/[^"?]+)\?v=/g)) {
     assert.ok(fs.existsSync(path.join(dir, file)), `${file} exists`);
     assert.ok(sw.includes(`"./${file}"`), `${file} is precached in sw.js`);
   }

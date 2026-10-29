@@ -1,5 +1,5 @@
 /* =============================================================================
-   "Training data α" window and the active fit-region model (pre-alpha).
+   "Training data β" window and the active fit-region model (beta).
    ============================================================================= */
 (function (IV) {
   "use strict";
@@ -43,7 +43,7 @@
 
   async function openTraining() {
     if (ui) return;
-    const d = IV.ui.openDialog({ title: "Training data α (pre-alpha)", onClose: () => { ui = null; } });
+    const d = IV.ui.openDialog({ title: "Training data β", onClose: () => { ui = null; } });
     d.dlg.classList.add("medium");
     d.body.classList.add("pad");
     d.body.style.overflow = "auto";

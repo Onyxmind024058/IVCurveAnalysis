@@ -283,6 +283,28 @@
     return out;
   }
 
+  /** Data-range reduction per scan: drop the first/last N acquired points, then keep from <= x <= to. */
+  function cropScans(raw, crop, xkey) {
+    return raw.map((s) => {
+      const n = s.IData.length;
+      const keep = [];
+      for (let k = crop.skipStart; k < n - crop.skipEnd; k++) {
+        const x = s[xkey][k];
+        if (!(x < crop.from) && !(x > crop.to)) keep.push(k);
+      }
+      const pick = (a) => Float64Array.from(keep, (k) => a[k]);
+      return { ...s, VData: pick(s.VData), RefData: pick(s.RefData), IData: pick(s.IData) };
+    });
+  }
+
+  /** Mean curve of raw scans for given settings (x axis, data range) — what the app analyses. */
+  function curveWith(raw, xkey, crop) {
+    const scans = crop && crop.enabled ? cropScans(raw, crop, xkey) : raw;
+    if (Math.min(...scans.map((s) => s.IData.length)) < 10) throw new Error("The data range leaves fewer than 10 points.");
+    const avg = averageScans(splitSweeps(scans, xkey), xkey);
+    return { xkey, x: avg.x, imean: avg.imean };
+  }
+
   /**
    * Average scans on a common, evenly spaced grid covering the voltage range
    * shared by all scans (no extrapolation; smoothing and derivatives assume
@@ -694,7 +716,7 @@
     argsort, take, sign, min, max, nanmin, nanmax, argmax, nanargmax, nanmedian, nanmean,
     linspace, interp, gradient, polyfit, polyval, lstsq,
     makeOdd, movingAverage, polynomialSmooth, smoothSignal,
-    averageScans, finiteCrossingX, fitLineRegion, sortedCurve,
+    averageScans, cropScans, curveWith, finiteCrossingX, fitLineRegion, sortedCurve,
     analyseOML, ionCurrentAt, computeEEPF, trapz, uniqueSorted, splitSweeps, rebinCurve, epflModel, curveFit, fitEPFLTwoFluid,
   };
 

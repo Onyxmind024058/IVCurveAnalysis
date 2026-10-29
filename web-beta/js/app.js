@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.4.0-beta.5";
+  const APP_VERSION = "2.5.0-beta.1";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -257,18 +257,7 @@
   }
 
   /** Per scan: drop the first/last N acquired points, then keep only from <= x <= to. */
-  function cropScans(raw, crop, xkey) {
-    return raw.map((s) => {
-      const n = s.IData.length;
-      const keep = [];
-      for (let k = crop.skipStart; k < n - crop.skipEnd; k++) {
-        const x = s[xkey][k];
-        if (!(x < crop.from) && !(x > crop.to)) keep.push(k);
-      }
-      const pick = (a) => Float64Array.from(keep, (k) => a[k]);
-      return { ...s, VData: pick(s.VData), RefData: pick(s.RefData), IData: pick(s.IData) };
-    });
-  }
+  const cropScans = (raw, crop, xkey) => N.cropScans(raw, crop, xkey);
 
   /** Recompute state.scans from the raw data and the Data range panel. */
   function applyCrop(userChange = true) {
@@ -424,6 +413,9 @@
           addDerived(r, area);
           setOmlResults(r);
           manualCard(r);
+          // accepted manual analyses are training data (beta)
+          IV.training.addReview({ file: state.fileName, x, imean, xkey, params: r.params, results: r, area, scans: state.rawScans.length })
+            .then((added) => { if (added) log("Curve added to the training data."); });
           status("Manual OML results received");
         },
       });
@@ -658,44 +650,46 @@
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
     {
-      version: "2.4.0-beta.5",
-      title: "Settings per curve",
+      version: "2.5.0-beta.1",
+      title: "Beta: training data for machine learning",
       items: [
-        "Saved batches (.ivbatch) now store, for every reviewed curve, the settings it was reviewed with (probe, ion species, x axis, data range); before, only the settings at the moment of saving were stored.",
+        "The assisted batch review is now in the stable version (2.4.0); this beta collects training data for a model that proposes the fit regions the way people place them.",
+        "Every curve you review and accept (batch review or manual OML) is added to a local training set; Training β shows the progress towards 200 curves and exports it as one .ivtrain file for the maintainer. Collection can be switched off there.",
+        "Training β → Import also accepts saved batches (.ivbatch): their curves marked “✔ reviewed” are added; curves accepted without review, not reviewed or skipped are left out, and a summary says why. Each imported curve is rebuilt with the settings it was reviewed with and must reproduce the saved results; otherwise it is skipped.",
+        "One model serves all gases and probes: it takes the ion mass as an input, and the training report shows the accuracy per ion species and per probe.",
+        "The batch review takes its proposals from a trained model once one is shipped with the app; until then it uses the same rules as the stable version.",
+        "Curves collected in the pre-alpha (/web-alpha/) stay available here; the pre-alpha now forwards to this beta.",
       ],
     },
     {
-      version: "2.4.0-beta.4",
+      version: "2.4.0",
+      title: "Assisted batch review",
+      items: [
+        "Batch review: load a whole series of .lda/.csv files, give each a parameter (position, pressure, power…), and let the app propose fit regions for every curve.",
+        "Each curve gets a status: ✓ good, ⚠ check (with the reasons, including the Vp check in volts) or ✗ failed. You review curves in the manual OML window, pre-filled with the proposal or with the regions of the previous accepted curve; “Accept & next” moves on.",
+        "The Results tab of the manual OML window now shows an overview of ln(Ie) with both fits, to judge a curve at a glance.",
+        "Summary plot of Te, ne, ni, Vp, Vf against your parameter, CSV export of the table, and Save/Open batch (.ivbatch) to continue later. A saved batch stores, for every reviewed curve, the settings it was reviewed with (probe, ion species, x axis, data range).",
+      ],
+    },
+    {
+      version: "2.3.3",
       title: "Vp check in volts",
       items: [
         "Vp check now in volts: Vp from the dI/dV peak and from the fit intersection within 2 V is ✓ good; 2–5 V is ok only if Te from Vp − Vf confirms the fitted Te; above 5 V (or 2–5 V without that confirmation) the curve should be reviewed by eye (red warning). Exported as Vp_difference_V and Vp_check (good / ok / review).",
-        "Batch review: the ΔVp column is in volts; curves that need review by this rule are marked “⚠ check”.",
       ],
     },
     {
-      version: "2.4.0-beta.3",
+      version: "2.3.2",
       title: "Vp check",
       items: [
         "Validation of the manual analysis: Vp from the dI/dV peak and Vp from the fit intersection should agree within 5–10 % of Vp. The agreement is shown in the results (✓ ≤ 5 %, acceptable 5–10 %), a red warning appears above 10 %, and it is exported (Vp_agreement_pct, Vp_check). Not checked when Vp is within 1 V of 0 V.",
-        "Batch review: a ΔVp column, and curves with more than 10 % between the two Vp values are marked “⚠ check” (replaces the earlier rule based on Te).",
       ],
     },
     {
-      version: "2.4.0-beta.2",
+      version: "2.3.1",
       title: "Fix",
       items: [
-        "After an update, browsers could keep running an old copy of the program for a few minutes; every file now has the version in its address, so an update always loads completely.",
-      ],
-    },
-    {
-      version: "2.4.0-beta.1",
-      title: "Beta: assisted batch review",
-      items: [
-        "Batch review: load a whole series of .lda/.csv files, give each a parameter (position, pressure, power…), and let the app propose fit regions for every curve.",
-        "Each curve gets a status: ✓ good, ⚠ check (with the reasons) or ✗ failed. You review curves in the manual OML window, pre-filled with the proposal or with the regions of the previous accepted curve; “Accept & next” moves on.",
-        "The Results tab of the manual OML window now shows an overview of ln(Ie) with both fits, to judge a curve at a glance.",
-        "Summary plot of Te, ne, ni, Vp, Vf against your parameter, CSV export of the table, and Save/Open batch to continue later.",
-        "This is a beta: the stable version stays at /web/.",
+        "The “Try beta” button opens its window again. After an update, browsers could keep running an old copy of the program for a few minutes; every file now has the version in its address, so an update always loads completely.",
       ],
     },
     {
@@ -905,15 +899,7 @@
   IV.app = {
     /** Mean curve of a file's scans with the main window's x axis and data range. */
     curveFor(rawScans) {
-      const xkey = $("xaxis").value;
-      const crop = readCrop();
-      let scans = rawScans;
-      if (crop.enabled) {
-        scans = cropScans(rawScans, crop, xkey);
-        if (Math.min(...scans.map((s) => s.IData.length)) < 10) throw new Error("The data range leaves fewer than 10 points.");
-      }
-      const avg = N.averageScans(N.splitSweeps(scans, xkey), xkey);
-      return { xkey, x: avg.x, imean: avg.imean };
+      return N.curveWith(rawScans, $("xaxis").value, readCrop());
     },
     probeArea,
     ionMass: () => numberValue("ionMass"),
