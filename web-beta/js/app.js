@@ -658,7 +658,7 @@
         "Training β → Import also accepts saved batches (.ivbatch): their curves marked “✔ reviewed” are added; curves accepted without review, not reviewed or skipped are left out, and a summary says why. Each imported curve is rebuilt with the settings it was reviewed with and must reproduce the saved results; otherwise it is skipped.",
         "One model serves all gases and probes: it takes the ion mass as an input, and the training report shows the accuracy per ion species and per probe.",
         "The batch review takes its proposals from a trained model once one is shipped with the app; until then it uses the same rules as the stable version.",
-        "Curves collected in the pre-alpha (/web-alpha/) stay available here; the pre-alpha now forwards to this beta.",
+        "Curves collected in the earlier pre-alpha (training data) stay available here.",
       ],
     },
     {
