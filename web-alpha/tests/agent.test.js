@@ -8,7 +8,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
-const path = require("node:path");
 const N = require("../js/numerics.js");
 const T = require("../js/agent-tools.js");
 const Agent = require("../js/agent.js");
@@ -127,8 +126,8 @@ test("agent loop: stops without a result if the model never submits", async () =
 });
 
 test("the built-in skill is the maintained skill file", () => {
-  const root = path.join(__dirname, "..", "..");
-  const shipped = fs.readFileSync(path.join(__dirname, "..", "agent", "SKILL.md"), "utf8");
-  const source = fs.readFileSync(path.join(root, "skills", "langmuir-probe-analysis", "SKILL.md"), "utf8");
-  assert.equal(shipped, source, "copy skills/langmuir-probe-analysis/SKILL.md to web-alpha/agent/SKILL.md");
+  const sync = require("../tools/sync-skill.js");
+  const shipped = fs.readFileSync(sync.target, "utf8");
+  assert.equal(shipped, sync.build(fs.readFileSync(sync.source, "utf8")), "run: node web-alpha/tools/sync-skill.js");
+  assert.match(require("../js/agent-skill.js").text, /Vp check in volts/);
 });
