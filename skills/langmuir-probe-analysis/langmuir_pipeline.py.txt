@@ -1,0 +1,475 @@
+#!/usr/bin/env python
+"""
+Langmuir probe I-V analysis pipeline with plotting.
+Usage: python langmuir_pipeline.py <file> [<file>...] [--plots DIR] [--npz DIR] [--mass AMU] [--area MM2]
+Accepts Impedans-style <Experiment> XML (one or more DataItem blocks) or
+CSV/TSV files with V,I columns (units auto-detected: A, mA or uA).
+Prints one JSON result block per trace to stdout (array "results").
+
+Options:
+  --plots DIR  save one 3-panel PNG per trace into DIR (I-V + semilog fits + EEDF)
+  --npz DIR    save one .npz per trace with arrays for chart rendering
+  --mass AMU   ion mass in amu (default: MolecularWeight from the XML, else 39.95 = Ar)
+  --area MM2   probe collecting area in mm^2 (overrides the file; required for CSV)
+
+Quality rules (same as the IV Analyser UB app):
+  Vp check   |Vp(dI/dV) - Vp(intersection)| <= 2 V: good; 2-5 V: ok only if the
+             Te cross-check from Vp - Vf confirms the fitted Te; > 5 V: review by eye.
+  Te check   fitted Te within [0.7*min, 1.3*max] of Te from Vp - Vf (OML and planar).
+  Flags      transition R^2 < 0.995, ion-fit R^2 < 0.9, < 5 saturation points or no
+             knee, Vp at the end of the sweep, Te outside 0.2-30 eV, ni/ne outside 0.2-5.
+
+NOTE: this file is stored as .py.txt because the Skill registry only allows
+text files. Copy it to a working directory as langmuir_pipeline.py before use:
+  cp /home/user/skills/langmuir-probe-analysis/langmuir_pipeline.py.txt <workdir>/langmuir_pipeline.py
+"""
+import os, sys, json
+import numpy as np
+import xml.etree.ElementTree as ET
+from scipy.signal import savgol_filter
+from scipy.optimize import curve_fit, brentq
+
+E_CH = 1.602e-19; ME = 9.109e-31; EPS0 = 8.854e-12; AMU = 1.66054e-27
+
+# quality limits, kept identical to the IV Analyser UB app (web/js/auto.js, numerics.js)
+VP_GOOD_V, VP_OK_V = 2.0, 5.0          # Vp check: dI/dV peak vs fit intersection
+TE_CHECK_TOL = 0.30                    # Te vs Te from Vp - Vf
+LIMITS = dict(r2_trans=0.995, r2_ion=0.9, min_sat_pts=5, edge_frac=0.03,
+              te_min=0.2, te_max=30.0, ni_ratio=(0.2, 5.0))
+
+
+def parse_xml(path):
+    tree = ET.parse(path); root = tree.getroot()
+    def p(tag):
+        v = root.findtext(".//Parameters//" + tag)
+        return float(v) if v is not None else None
+    L_mm, r_mm, A_mm2 = p("Length"), p("Radius"), p("Area")
+    gas = root.findtext(".//GasComonents/GasComponent/Name") or "Ar"
+    MW = root.findtext(".//GasComonents/GasComponent/MolecularWeight")
+    params = dict(length_mm=L_mm, radius_mm=r_mm, area_mm2=A_mm2,
+                  gas=gas, molecular_weight=float(MW) if MW else 39.95)
+    if A_mm2 is not None:
+        A = A_mm2 * 1e-6  # file value is in mm^2
+    elif r_mm is not None and L_mm is not None:
+        A = 2 * np.pi * r_mm * 1e-3 * L_mm * 1e-3
+    else:
+        A = None
+    traces = []
+    for item in root.findall(".//DataItem"):
+        V = np.array([float(d.text) for d in item.findall("./VData/Data")])
+        I = np.array([float(d.text) for d in item.findall("./IData/Data")])
+        if len(V) >= 50 and len(V) == len(I):
+            traces.append(dict(V=V, I=I, zpos=float(item.findtext("ZPos") or 0)))
+    return params, A, traces
+
+
+def parse_csv(path):
+    import pandas as pd
+    df = pd.read_csv(path, sep=None, engine="python")
+    cols = {str(c).lower().strip(): c for c in df.columns}  # match names case-insensitively
+    names = list(cols)
+    vcol = cols[next((c for c in names if c in ("v", "voltage", "v_probe", "bias_v")), names[0])]
+    icol = cols[next((c for c in names if c in ("i", "current", "i_probe")), names[1])]
+    V = pd.to_numeric(df[vcol], errors="coerce").to_numpy(float)
+    I = pd.to_numeric(df[icol], errors="coerce").to_numpy(float)
+    ok = np.isfinite(V) & np.isfinite(I)
+    V, I = V[ok], I[ok]
+    med = float(np.median(np.abs(I)))
+    scale = 1e-3 if med > 1e-5 else (1e-6 if med > 1e-9 else 1.0)
+    return V, I * scale
+
+
+def druyvesteyn_selftest(A, seed_Te=2.0, seed_ne=1e16, tol=0.10):
+    """Validate the Druyvesteyn constant against a synthetic Maxwellian."""
+    Cdr = 4 * np.sqrt(ME / 2) / (E_CH ** 1.5 * A)
+    Vs = np.linspace(-25, 5, 3001)
+    I0 = seed_ne * E_CH * A * np.sqrt(seed_Te * E_CH / (2 * np.pi * ME))
+    Isy = np.where(Vs < 0, I0 * np.exp(Vs / seed_Te),
+                   I0) - 6e-6 * np.sqrt(np.clip(-Vs, 0, None))
+    d2 = savgol_filter(Isy, 31, 3, deriv=2, delta=Vs[1] - Vs[0])
+    es = -Vs
+    ok = (es > 0.3) & (es < 10)
+    ex = es[ok]; f = Cdr * np.sqrt(ex) * d2[ok]
+    o = np.argsort(ex); ex, f = ex[o], f[o]
+    ne_rec = float(np.trapezoid(np.clip(f, 0, None), ex))
+    if abs(ne_rec - seed_ne) / seed_ne > tol:
+        raise RuntimeError("Druyvesteyn self-test FAILED: %.2e vs %.2e" % (ne_rec, seed_ne))
+    return Cdr
+
+
+def te_from_potentials(Vp, Vf, mass_amu):
+    """Te from Vp - Vf for a Maxwellian plasma: OML cylindrical probe (thick sheath)
+    and planar sheath with Bohm flux (thin sheath). Returns (Te_OML, Te_planar, factors)."""
+    mu = mass_amu * AMU / ME
+    planar = 0.5 + 0.5 * np.log(mu / (2 * np.pi))
+    x = planar  # solve x + ln(2/sqrt(pi)) + 0.5 ln(x/mu) = 0
+    for _ in range(50):
+        g = x + np.log(2 / np.sqrt(np.pi)) + 0.5 * np.log(x / mu)
+        step = g / (1 + 0.5 / x)
+        x -= step
+        if abs(step) < 1e-12:
+            break
+    dV = Vp - Vf
+    if not (dV > 0):
+        return None, None, (float(x), float(planar))
+    return float(dV / x), float(dV / planar), (float(x), float(planar))
+
+
+def te_check(Te, Te_oml, Te_planar, tol=TE_CHECK_TOL):
+    """True if the fitted Te lies within the Vp - Vf range widened by tol (None if not checkable)."""
+    if Te is None or Te_oml is None or Te_planar is None:
+        return None
+    lo = min(Te_oml, Te_planar) * (1 - tol)
+    hi = max(Te_oml, Te_planar) * (1 + tol)
+    return bool(lo <= Te <= hi)
+
+
+def vp_check(Vp_didv, Vp_int, te_ok):
+    """Vp rule: <= 2 V good; 2-5 V ok only if the Te cross-check confirms; > 5 V review."""
+    if Vp_didv is None or Vp_int is None:
+        return dict(level="not_checked", diff_V=None,
+                    reason="no fit-intersection Vp (no usable saturation region)")
+    d = abs(Vp_didv - Vp_int)
+    if d <= VP_GOOD_V:
+        return dict(level="good", diff_V=d, reason="within 2 V")
+    if d > VP_OK_V:
+        return dict(level="review", diff_V=d, reason="more than 5 V: review by eye")
+    if te_ok is None:
+        return dict(level="review", diff_V=d, reason="2-5 V and no Te cross-check possible")
+    if te_ok:
+        return dict(level="ok", diff_V=d, reason="2-5 V, confirmed by Te from Vp - Vf")
+    return dict(level="review", diff_V=d, reason="2-5 V and Te from Vp - Vf does not confirm")
+
+
+def line_fit(x, y):
+    """Least-squares line y = m x + b with R^2."""
+    m, b = np.polyfit(x, y, 1)
+    ss_res = float(np.sum((y - (m * x + b)) ** 2)); ss_tot = float(np.sum((y - y.mean()) ** 2))
+    return float(m), float(b), (1 - ss_res / ss_tot) if ss_tot > 0 else 0.0
+
+
+def maxwell_eedf(E, ne, Te):
+    """EEDF (per eV) of a Maxwellian in m^-3 eV^-1."""
+    return ne * 2.0 / np.sqrt(np.pi) / Te ** 1.5 * np.sqrt(E) * np.exp(-E / Te)
+
+
+def analyse(V, I, A, mass_amu=39.95, minTe=0.3, maxTe=8.0):
+    """Returns (results_dict, arrays_dict)."""
+    step = float(np.median(np.diff(V)))
+
+    # 1. floating potential
+    ii = np.where(np.diff(np.sign(I)) != 0)[0]
+    if len(ii) == 0:
+        raise ValueError("No I=0 crossing found")
+    i0 = ii[0]
+    Vf = float(np.interp(0.0, I[i0:i0 + 2], V[i0:i0 + 2]))
+
+    # 2. noise from ion branch
+    m_ion = V <= Vf - 8
+    if m_ion.sum() < 20:
+        m_ion = V <= Vf - 4
+    c = np.polyfit(V[m_ion], I[m_ion], 2)
+    sig = max(float(np.std(I[m_ion] - np.polyval(c, V[m_ion]))), 1e-12)
+
+    # 3. plasma potential
+    win = max(11, int(round(1.0 / step)) | 1)
+    dIdV = savgol_filter(I, win, 3, deriv=1, delta=step)
+    cand = np.where(V > Vf - 2)[0]
+    k = cand[int(np.argmax(dIdV[cand]))]
+    w = 4
+    cc = np.polyfit(V[k - w:k + w], dIdV[k - w:k + w], 2)
+    Vp = float(-cc[1] / (2 * cc[0]))
+
+    # 4. ion current model: OML sqrt law (fallback: linear)
+    m_fit = V <= Vf - 5
+    f_ion = lambda v, c0, v0: -c0 * np.sqrt(np.clip(v0 - v, 0, None))
+    ion_model = "oml_sqrt"
+    try:
+        popt, _ = curve_fit(f_ion, V[m_fit], I[m_fit],
+                            p0=[abs(float(I[0])) / np.sqrt(20), Vp], maxfev=10000)
+        c0, v0 = popt
+        if c0 <= 0:
+            raise RuntimeError
+        r_ion = float(np.std(I[m_fit] - f_ion(V[m_fit], *popt)))
+        ss_tot = float(np.sum((I[m_fit] - I[m_fit].mean()) ** 2))
+        r2_ion = 1 - float(np.sum((I[m_fit] - f_ion(V[m_fit], *popt)) ** 2)) / ss_tot if ss_tot > 0 else 0.0
+    except Exception:
+        ai, bi = np.polyfit(V[m_fit], I[m_fit], 1)
+        c0, v0, ion_model = None, None, "linear"
+        f_ion = (lambda v, a=ai, b=bi: a * v + b)
+        r_ion = sig
+        r2_ion = line_fit(V[m_fit], I[m_fit])[2]
+    Ii_model = f_ion(V, c0, v0) if ion_model == "oml_sqrt" else f_ion(V)
+    Ie = I - Ii_model
+
+    # 5. electron temperature: 1-T and 2-T fits
+    sel = (Ie > 1.5 * sig) & (V < Vp - 0.15)
+    eps = Vp - V
+    x, y = eps[sel], Ie[sel]
+    f1 = lambda ep, a, T: a * np.exp(-ep / T)
+    f2 = lambda ep, a, Tc, ah, Th: a * np.exp(-ep / Tc) + ah * np.exp(-ep / Th)
+    p1, _ = curve_fit(f1, x, y, p0=[float(np.max(y)), 2.0],
+                      sigma=np.full_like(x, sig), maxfev=20000)
+    chi1 = float(np.sum(((y - f1(x, *p1)) / sig) ** 2) / max(len(x) - 2, 1))
+    T1 = float(np.clip(p1[1], minTe, maxTe))
+    ne1 = float(p1[0] / (A * E_CH * np.sqrt(T1 * E_CH / (2 * np.pi * ME))))
+
+    # 5b. second Vp: intersection of the straight ln(Ie) lines of the transition
+    #     (Vf + 0.5 Te .. Vp - Te) and of the electron saturation (Vp + 1.5 Te .. Vp + 6 Te)
+    Vp_int = None; r2_trans = None; n_sat = 0; sat_slope = None; trans_slope = None
+    pos = Ie > 0
+    mt = pos & (V >= Vf + 0.5 * T1) & (V <= Vp - T1)
+    if mt.sum() < 5:
+        mt = sel & pos
+    if mt.sum() >= 3:
+        trans_slope, bt, r2_trans = line_fit(V[mt], np.log(Ie[mt]))
+        ms = pos & (V >= Vp + 1.5 * T1) & (V <= Vp + 6 * T1)
+        n_sat = int(ms.sum())
+        if n_sat >= LIMITS["min_sat_pts"]:
+            sat_slope, bs, _ = line_fit(V[ms], np.log(Ie[ms]))
+            if trans_slope > sat_slope:
+                Vp_int = float((bs - bt) / (trans_slope - sat_slope))
+    two_T = None; dVf_pred = None
+    ac_, ah_, Tc_, Th_ = None, None, None, None
+    try:
+        p2, _ = curve_fit(f2, x, y, p0=[float(np.max(y)), 1.0, float(np.max(y)) * 0.1, 4.0],
+                          sigma=np.full_like(x, sig), maxfev=40000)
+        ac_, ah_, Tc_, Th_ = p2[0], p2[2], p2[1], p2[3]
+        if Th_ < Tc_:
+            ac_, ah_, Tc_, Th_ = ah_, ac_, Th_, Tc_
+        chi2 = float(np.sum(((y - f2(x, *p2)) / sig) ** 2) / max(len(x) - 4, 1))
+        Tc, Th = float(np.clip(Tc_, minTe, maxTe)), float(np.clip(Th_, minTe, 20))
+        nc = float(ac_ / (A * E_CH * np.sqrt(Tc * E_CH / (2 * np.pi * ME))))
+        nh = float(ah_ / (A * E_CH * np.sqrt(Th * E_CH / (2 * np.pi * ME))))
+        two_T = dict(Tc_eV=Tc, Th_eV=Th, nh_over_ne=nh / (nc + nh),
+                     ne_m3=nc + nh, chi2_dof=chi2)
+        IiVf = float(f_ion(Vf, c0, v0)) if ion_model == "oml_sqrt" else float(f_ion(Vf))
+        try:
+            dVf_pred = float(brentq(
+                lambda dv: ac_ * np.exp(-dv / Tc_) + ah_ * np.exp(-dv / Th_) - abs(IiVf),
+                0.01, 25))
+        except Exception:
+            dVf_pred = None
+    except Exception:
+        pass
+
+    # 6. EEDF (Druyvesteyn, constant self-tested every run)
+    Cdr = druyvesteyn_selftest(A)
+    win_e = max(21, int(round(2.0 / step)) | 1)  # ~2 V window: knee shape vs noise trade-off
+    d2 = savgol_filter(Ie, win_e, 3, deriv=2, delta=step)
+    o = np.argsort(eps)
+    Es = eps[o]
+    fs = Cdr * np.sqrt(np.clip(Es, 0, None)) * d2[o]
+    zone = (Es > 12) & (Es < 30)
+    noise_f = float(np.std(fs[zone])) if zone.sum() > 10 else None
+    ok9 = (Es > 0.6) & (Es < 9)
+    EE = Es[ok9]; fE = np.clip(fs[ok9], 0, None)
+    ne_edf = float(np.trapezoid(fE, EE)) if len(EE) > 5 else None
+    mean_e = float(np.trapezoid(EE * fE, EE) / ne_edf) if ne_edf else None
+    e_max_reliable = None
+    if noise_f:
+        okr = (Es > 1) & (Es < 15) & (fs / noise_f > 2)
+        e_max_reliable = float(Es[okr].max()) if okr.sum() > 3 else 2.0
+
+    ne = two_T["ne_m3"] if two_T else ne1
+    Te_for_lD = two_T["Tc_eV"] if two_T else T1
+    lD = float(np.sqrt(EPS0 * Te_for_lD * E_CH / (ne * E_CH ** 2)))
+    I_is = float(I[0])
+
+    # ion density from the OML sqrt law: I^2 = c0^2 (v0 - V), ni = pi/(A e) * c0 * sqrt(mi / 2e)
+    ni = (float(np.pi / (A * E_CH) * c0 * np.sqrt(mass_amu * AMU / (2 * E_CH)))
+          if ion_model == "oml_sqrt" else None)
+
+    # cross-checks and quality flags (same rules as the app)
+    Te_oml, Te_pl, factors = te_from_potentials(Vp, Vf, mass_amu)
+    te_ok = te_check(T1, Te_oml, Te_pl)
+    vpc = vp_check(Vp, Vp_int, te_ok)
+    flags = []
+    if r2_trans is not None and r2_trans < LIMITS["r2_trans"]:
+        flags.append("transition region not straight on ln(Ie) (R2 = %.4f)" % r2_trans)
+    if r2_ion < LIMITS["r2_ion"]:
+        flags.append("ion fit is poor (R2 = %.3f)" % r2_ion)
+    if n_sat < LIMITS["min_sat_pts"]:
+        flags.append("no usable electron-saturation region above Vp")
+    elif sat_slope is not None and sat_slope >= trans_slope:
+        flags.append("no clear knee: saturation is as steep as the transition")
+    if Vp > V.max() - LIMITS["edge_frac"] * (V.max() - V.min()):
+        flags.append("Vp is at the end of the sweep")
+    if not (LIMITS["te_min"] <= T1 <= LIMITS["te_max"]):
+        flags.append("Te = %.2f eV is outside %.1f-%.0f eV" % (T1, LIMITS["te_min"], LIMITS["te_max"]))
+    if vpc["level"] == "review":
+        flags.append("Vp check: dI/dV and fit-intersection Vp differ by %.2f V (%s)" % (vpc["diff_V"], vpc["reason"]))
+    if te_ok is False:
+        flags.append("Te differs by more than 30 %% from Te from Vp - Vf (%.2f-%.2f eV)" % (min(Te_oml, Te_pl), max(Te_oml, Te_pl)))
+    ni_ratio = ni / ne1 if ni else None
+    if ni_ratio is not None and not (LIMITS["ni_ratio"][0] <= ni_ratio <= LIMITS["ni_ratio"][1]):
+        flags.append("ni/ne = %.2f is far from 1" % ni_ratio)
+
+    res = dict(
+        Vf_V=Vf, Vp_V=Vp, Vp_minus_Vf_V=Vp - Vf,
+        Vp_dIdV_V=Vp, Vp_intersection_V=Vp_int,
+        Vp_difference_V=vpc["diff_V"], Vp_check=vpc["level"], Vp_check_reason=vpc["reason"],
+        Te_VpVf_OML_eV=Te_oml, Te_VpVf_planar_eV=Te_pl,
+        VpVf_factor_OML=factors[0], VpVf_factor_planar=factors[1], Te_check_ok=te_ok,
+        r2_transition=r2_trans, r2_ion=r2_ion, n_saturation_points=n_sat,
+        ni_OML_m3=ni, ni_over_ne=ni_ratio, ion_mass_amu=mass_amu,
+        quality_flags=flags, status="good" if not flags else "check",
+        noise_A=sig, ion_model=ion_model, ion_residual_A=r_ion,
+        I_ion_at_Vf_A=float(f_ion(Vf, c0, v0)) if ion_model == "oml_sqrt" else float(f_ion(Vf)),
+        I_is_at_Vmin_A=I_is,  # Iis convention of the app: I_ion_at_Vf_A
+        Te_single_eV=T1, ne_single_m3=ne1, chi2_single_dof=chi1,
+        two_T=two_T, dVf_predicted_V=dVf_pred, dVf_consistent=bool(
+            dVf_pred is not None and abs(dVf_pred - (Vp - Vf)) / (Vp - Vf) < 0.25),
+        ne_m3=ne, ne_edf_m3=ne_edf,
+        Te_eff_EEDF_eV=(2.0 / 3.0 * mean_e) if mean_e else None,
+        eedf_noise_floor_m3eV=noise_f, EEDF_reliable_to_eV=e_max_reliable,
+        lambda_D_um=lD * 1e6,
+    )
+
+    # arrays for plotting / chart rendering
+    grid = np.linspace(max(0.05, float(x.min())), 12, 200)  # eps grid for fit curves
+    fit1_curve = f1(grid, *p1)
+    fit2_curve = (f2(grid, ac_, Tc_, ah_, Th_)
+                   if ac_ is not None else np.full_like(grid, np.nan))
+    eedf_2T = (maxwell_eedf(EE, nc, Tc) + maxwell_eedf(EE, nh, Th)
+               if two_T else np.full_like(EE, np.nan))
+    eedf_1T = maxwell_eedf(EE, ne1, T1)
+    arrays = dict(
+        V=V, I=I, Ii_model=Ii_model, Ie=Ie, Vf=Vf, Vp=Vp,
+        sel_V=V[sel], sel_Ie=Ie[sel],
+        fit_eps_grid=grid, fit1_curve=fit1_curve, fit2_curve=fit2_curve,
+        eedf_E=EE, eedf_f=fE, eedf_1T=eedf_1T, eedf_2T=eedf_2T,
+        eedf_noise=noise_f,
+    )
+    return res, arrays
+
+
+def plot_trace(arr, res, out_png, title=""):
+    """3-panel analysis figure: I-V + ion model, semilog fits, EEDF."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    V, I, Ie = arr["V"], arr["I"], arr["Ie"]
+    Vf, Vp = arr["Vf"], arr["Vp"]
+    fig, ax = plt.subplots(1, 3, figsize=(16, 4.6))
+    # panel 1: I-V
+    ax[0].plot(V, I * 1e6, lw=1, color="steelblue", label="measured")
+    ax[0].plot(V, arr["Ii_model"] * 1e6, "--", lw=1, color="tomato",
+               label="ion model (%s)" % res["ion_model"])
+    ax[0].axhline(0, color="gray", lw=0.5)
+    ax[0].axvline(Vf, color="green", ls=":", lw=1, label="$V_f$ = %.1f V" % Vf)
+    ax[0].axvline(Vp, color="red", ls=":", lw=1, label="$V_p$ = %.1f V" % Vp)
+    ax[0].set_xlabel("Probe bias (V)"); ax[0].set_ylabel("Current (µA)")
+    ax[0].set_title("I–V characteristic"); ax[0].legend(fontsize=7)
+    # panel 2: semilog electron current with fits
+    s = arr["sel_Ie"] > 0
+    ax[1].semilogy(arr["sel_V"][s], arr["sel_Ie"][s] * 1e6, ".", ms=2,
+                   color="steelblue", label="$I_e$ (data)")
+    ax[1].semilogy(Vp - arr["fit_eps_grid"], arr["fit1_curve"] * 1e6, "--",
+                   color="orange", lw=1,
+                   label="1-T: %.2f eV (χ²=%.0f)" % (res["Te_single_eV"], res["chi2_single_dof"]))
+    if res["two_T"]:
+        ax[1].semilogy(Vp - arr["fit_eps_grid"], arr["fit2_curve"] * 1e6, "-",
+                       color="k", lw=1,
+                       label="2-T: %.2f + %.2f eV (χ²=%.1f)" % (
+                           res["two_T"]["Tc_eV"], res["two_T"]["Th_eV"], res["two_T"]["chi2_dof"]))
+    ax[1].axvline(Vf, color="green", ls=":", lw=1)
+    ax[1].axvline(Vp, color="red", ls=":", lw=1)
+    ax[1].set_xlabel("Probe bias (V)"); ax[1].set_ylabel("$I_e$ (µA)")
+    ax[1].set_title("Electron current (semilog)"); ax[1].legend(fontsize=7)
+    # panel 3: EEDF
+    E, f = arr["eedf_E"], arr["eedf_f"]
+    ax[2].plot(E, f / 1e6, lw=1, color="steelblue", label="EEDF (Druyvesteyn)")
+    ax[2].plot(E, arr["eedf_1T"] / 1e6, "--", color="orange", lw=1,
+               label="1-T Maxwellian")
+    if res["two_T"]:
+        ax[2].plot(E, arr["eedf_2T"] / 1e6, "-", color="k", lw=1,
+                   label="2-T Maxwellian")
+    if arr["eedf_noise"]:
+        ax[2].axhline(arr["eedf_noise"] / 1e6, ls=":", color="gray", lw=1,
+                      label="noise floor")
+    if res["EEDF_reliable_to_eV"]:
+        ax[2].axvline(res["EEDF_reliable_to_eV"], ls=":", color="red", lw=1,
+                      label="reliable to %.1f eV" % res["EEDF_reliable_to_eV"])
+    ax[2].set_xlabel("Energy ε = Vp − V (eV)")
+    ax[2].set_ylabel("EEDF (cm$^{-3}$eV$^{-1}$)")
+    ax[2].set_title("Electron energy distribution"); ax[2].legend(fontsize=7)
+    ax[2].set_xlim(0, max(9, E.max()))
+    if title:
+        fig.suptitle(title, fontsize=10)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(out_png, dpi=110)
+    plt.close(fig)
+    return out_png
+
+
+def looks_like_impedans_xml(path):
+    """True if the file is Impedans-style XML, whatever its extension
+    (handles .lda exports, which are XML despite the extension)."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(4000)
+        return b"<Experiment" in head and (b"VData" in head or b"DataItem" in head)
+    except OSError:
+        return False
+
+
+def main():
+    args = sys.argv[1:]
+    files, plots_dir, npz_dir, mass, area_mm2 = [], None, None, None, None
+    i = 0
+    while i < len(args):
+        if args[i] == "--plots" and i + 1 < len(args):
+            plots_dir = args[i + 1]; i += 2
+        elif args[i] == "--npz" and i + 1 < len(args):
+            npz_dir = args[i + 1]; i += 2
+        elif args[i] == "--mass" and i + 1 < len(args):
+            mass = float(args[i + 1]); i += 2
+        elif args[i] == "--area" and i + 1 < len(args):
+            area_mm2 = float(args[i + 1]); i += 2
+        else:
+            files.append(args[i]); i += 1
+    for d in (plots_dir, npz_dir):
+        if d:
+            os.makedirs(d, exist_ok=True)
+    results = []
+    for path in files:
+        if path.lower().endswith(".xml") or looks_like_impedans_xml(path):
+            params, A, traces = parse_xml(path)
+            if area_mm2 is not None:
+                A = area_mm2 * 1e-6
+            if A is None:
+                raise ValueError("No probe area in XML; supply A manually")
+            base = os.path.splitext(os.path.basename(path))[0]
+            for tr in traces:
+                r, arr = analyse(tr["V"], tr["I"], A, mass or params["molecular_weight"])
+                r["file"] = os.path.basename(path); r["zpos_mm"] = tr["zpos"]
+                r["probe_area_mm2"] = A * 1e6; r["gas"] = params["gas"]
+                tag = "%s_z%.1f" % (base, tr["zpos"])
+                if plots_dir:
+                    r["plot"] = plot_trace(arr, r, os.path.join(plots_dir, tag + ".png"),
+                                           title=tag)
+                if npz_dir:
+                    np.savez(os.path.join(npz_dir, tag + ".npz"), **arr)
+                results.append(r)
+        else:
+            V, I = parse_csv(path)
+            A = area_mm2 * 1e-6 if area_mm2 is not None else 4.73e-6
+            r, arr = analyse(V, I, A, mass or 39.95)
+            base = os.path.splitext(os.path.basename(path))[0]
+            r["file"] = os.path.basename(path); r["probe_area_mm2"] = A * 1e6
+            if area_mm2 is None:
+                r["note"] = "CSV input: probe area assumed 4.73 mm2 - confirm with user"
+            if mass is None:
+                r["note_mass"] = "CSV input: argon (39.95 amu) assumed - confirm the gas with user"
+            if plots_dir:
+                r["plot"] = plot_trace(arr, r, os.path.join(plots_dir, base + ".png"),
+                                       title=base)
+            if npz_dir:
+                np.savez(os.path.join(npz_dir, base + ".npz"), **arr)
+            results.append(r)
+    print(json.dumps({"results": results}, indent=1, default=float))
+
+
+if __name__ == "__main__":
+    main()
