@@ -550,3 +550,9 @@ table.batch-table th, table.batch-table td { padding: 5px 6px; }
   .batch-right { grid-template-rows: 320px 380px; }
 }
 table.batch-table td.vp-poor { color: var(--red); font-weight: 600; }
+
+/* ---------- Training data ---------- */
+.train-progress { height: 10px; border-radius: 6px; background: var(--border); overflow: hidden; }
+.train-progress .bar { height: 100%; width: 0; background: var(--mint); transition: width .3s; }
+.row-buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+#trainingBtn .badge { background: var(--border); color: var(--text); }

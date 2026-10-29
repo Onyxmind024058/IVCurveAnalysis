@@ -27,6 +27,8 @@ const APP_FILES = [
   "./js/plot.js",
   "./js/lda.js",
   "./js/csv.js",
+  "./js/auto.js",
+  "./js/batch.js",
   "./js/manual-oml.js",
   "./js/eepf.js",
   "./js/epfl.js",

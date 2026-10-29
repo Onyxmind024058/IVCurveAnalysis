@@ -1,8 +1,8 @@
 /* =============================================================================
-   Checks for the automatic fit-region proposals and quality flags (beta).
+   Checks for the automatic fit-region proposals and quality flags.
 
    Run from the repository root (Node 18 or newer, nothing to install):
-       node --test web-beta/tests/auto.test.js
+       node --test web/tests/auto.test.js
    ============================================================================= */
 "use strict";
 const test = require("node:test");

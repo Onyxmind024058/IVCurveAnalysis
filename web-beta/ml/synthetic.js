@@ -9,7 +9,7 @@
      saturation [Vp + 1.5 Te, Vp + 6 Te], ion fit up to Vf − 4 Te.
    A model trained on these samples should learn those habits.
 
-       node web-alpha/ml/synthetic.js 200 > synthetic.ivtrain     (demo file)
+       node web-beta/ml/synthetic.js 200 > synthetic.ivtrain     (demo file)
    ============================================================================= */
 "use strict";
 const path = require("node:path");

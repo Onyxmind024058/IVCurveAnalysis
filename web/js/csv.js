@@ -175,7 +175,11 @@
   // Import window
   // ---------------------------------------------------------------------------
 
-  /** Shows the mapping window; resolves to scans, or null when cancelled. */
+  /**
+   * Shows the mapping window; resolves to scans, or null when cancelled.
+   * The chosen mapping is attached as scans.mapping so other files with the
+   * same layout can be read with applyMapping() (batch import).
+   */
   function importCSV(text, fileName) {
     const parsed = parseTable(text);
     let t = parsed.blocks[parsed.defaultBlock];
@@ -309,7 +313,9 @@
 
       function doImport() {
         try {
-          result = buildScans(t, mapping(), UNITS[unit]);
+          const mm = mapping();
+          result = buildScans(t, mm, UNITS[unit]);
+          result.mapping = { ...mm, block: parsed.blocks.indexOf(t), names: t.names, unit };
           d.close();
         } catch (e) {
           msg.textContent = e.message;
@@ -321,5 +327,15 @@
     });
   }
 
-  IV.csv = { parseTable, guessMapping, buildScans, importCSV };
+  /** Reads a CSV with the mapping chosen for another file; throws if the layout differs. */
+  function applyMapping(text, mapping) {
+    const parsed = parseTable(text);
+    const t = parsed.blocks[mapping.block] || parsed.blocks[parsed.defaultBlock];
+    if (t.names.length !== mapping.names.length || t.names.some((n, j) => n !== mapping.names[j])) {
+      throw new Error("The columns differ from the first CSV file.");
+    }
+    return buildScans(t, mapping, UNITS[mapping.unit]);
+  }
+
+  IV.csv = { parseTable, guessMapping, buildScans, importCSV, applyMapping };
 })(window.IV = window.IV || {});

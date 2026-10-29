@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.3.3";
+  const APP_VERSION = "2.4.0";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -393,6 +393,24 @@
     state.lastEEPF = null;  // derived from the previous OML result
   }
 
+  function manualCard(r, title = "Manual OML analysis") {
+    resultCard(title, [
+      ["Floating potential Vf", fmtG(r.Vf, 5)],
+      ["Vp from dI/dV", fmtG(r.Vp_dIdV, 5)],
+      ["Vp from log-fit intersection", fmtG(r.Vp_intersection, 5)],
+      ["Vp check (dI/dV vs intersection)", vpInfo(r).label],
+      ["Final plasma potential Vp", fmtG(r.Vp, 5)],
+      ["Electron temperature Te", `${fmtG(r.Te_eV, 5)} eV`],
+      ...tePotentialRows(r),
+      ["Ion current Iis (at Vf)", `${fmtE(r.Iis_A, 5)} A`],
+      ...ionRows(r),
+      ["Electron saturation current Ies", `${fmtE(r.Ies_A, 5)} A`],
+      ["Electron density ne", `${fmtE(r.ne_m3, 5)} m⁻³`],
+      ["Ion fit Iion² slope a", `${fmtE(r.ion_i2_a)} A²/V`],
+      ["Ion fit Iion² offset b", `${fmtE(r.ion_i2_b)} A²`],
+    ], manualNote(r), undefined, manualWarn(r));
+  }
+
   function openManual() {
     if (!needData()) return;
     try {
@@ -405,21 +423,7 @@
           state.params.manual = r.params;
           addDerived(r, area);
           setOmlResults(r);
-          resultCard("Manual OML analysis", [
-            ["Floating potential Vf", fmtG(r.Vf, 5)],
-            ["Vp from dI/dV", fmtG(r.Vp_dIdV, 5)],
-            ["Vp from log-fit intersection", fmtG(r.Vp_intersection, 5)],
-            ["Vp check (dI/dV vs intersection)", vpInfo(r).label],
-            ["Final plasma potential Vp", fmtG(r.Vp, 5)],
-            ["Electron temperature Te", `${fmtG(r.Te_eV, 5)} eV`],
-            ...tePotentialRows(r),
-            ["Ion current Iis (at Vf)", `${fmtE(r.Iis_A, 5)} A`],
-            ...ionRows(r),
-            ["Electron saturation current Ies", `${fmtE(r.Ies_A, 5)} A`],
-            ["Electron density ne", `${fmtE(r.ne_m3, 5)} m⁻³`],
-            ["Ion fit Iion² slope a", `${fmtE(r.ion_i2_a)} A²/V`],
-            ["Ion fit Iion² offset b", `${fmtE(r.ion_i2_b)} A²`],
-          ], manualNote(r), undefined, manualWarn(r));
+          manualCard(r);
           status("Manual OML results received");
         },
       });
@@ -654,6 +658,16 @@
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
     {
+      version: "2.4.0",
+      title: "Assisted batch review",
+      items: [
+        "Batch review: load a whole series of .lda/.csv files, give each a parameter (position, pressure, power…), and let the app propose fit regions for every curve.",
+        "Each curve gets a status: ✓ good, ⚠ check (with the reasons, including the Vp check in volts) or ✗ failed. You review curves in the manual OML window, pre-filled with the proposal or with the regions of the previous accepted curve; “Accept & next” moves on.",
+        "The Results tab of the manual OML window now shows an overview of ln(Ie) with both fits, to judge a curve at a glance.",
+        "Summary plot of Te, ne, ni, Vp, Vf against your parameter, CSV export of the table, and Save/Open batch (.ivbatch) to continue later. A saved batch stores, for every reviewed curve, the settings it was reviewed with (probe, ion species, x axis, data range).",
+      ],
+    },
+    {
       version: "2.3.3",
       title: "Vp check in volts",
       items: [
@@ -726,6 +740,7 @@
       ],
     },
   ];
+  // separate from the stable app in /web/ (same origin), so switching between them does not re-announce
   const SEEN_KEY = "ivcurve.lastSeenVersion";
 
   function showWhatsNew() {
@@ -758,11 +773,10 @@
   const BETA_URL = "../web-beta/";
   // Keep in step with the beta's own What's new.
   const BETA_FEATURES = [
-    ["Assisted batch review", "load a whole series of .lda/.csv files (positions, pressures, powers…) and give each file a parameter value."],
-    ["Automatic fit-region proposals", "for every curve, with a status ✓ good / ⚠ check (with the reasons) / ✗ failed."],
-    ["Fast review", "each curve opens in the manual OML window, already filled in; check it and press “Accept & next”."],
-    ["Results overview", "the Results tab shows ln(Ie) with both fits, to judge a curve at a glance."],
-    ["Series results", "summary plot of Te, ne, ni, Vp, Vf against your parameter, one CSV for the whole series, and save/open a batch to continue later."],
+    ["Training data for machine learning", "every curve you review and accept (batch review or manual OML) is kept in your browser, to train a model that proposes the fit regions the way people place them."],
+    ["Training β window", "shows the progress towards 200 reviewed curves and exports them as one .ivtrain file to send to the maintainer."],
+    ["Earlier batches count too", "import saved batches (.ivbatch): their curves marked “✔ reviewed” are added to the training data."],
+    ["Model proposals", "once a trained model is shipped, the batch review takes its proposals from it; until then it uses the same rules as this version."],
   ];
 
   async function showTryBeta() {
@@ -819,6 +833,7 @@
     $("exportAll").addEventListener("click", () => { closeMenus(); exportAllCSV(); });
     $("whatsNewBtn").addEventListener("click", showWhatsNew);
     $("tryBetaBtn").addEventListener("click", showTryBeta);
+    $("batchBtn").addEventListener("click", () => IV.openBatch());
     $("aboutBtn").addEventListener("click", showAbout);
     $("clearLog").addEventListener("click", () => {
       state.cards = [];
@@ -899,4 +914,46 @@
   document.addEventListener("DOMContentLoaded", init);
   IV.state = state;
   IV.openFile = openFile;
+
+  // ---------------------------------------------------------------------------
+  // Helpers for the batch review window (same settings as the main window)
+  // ---------------------------------------------------------------------------
+  IV.app = {
+    /** Mean curve of a file's scans with the main window's x axis and data range. */
+    curveFor(rawScans) {
+      const xkey = $("xaxis").value;
+      const crop = readCrop();
+      let scans = rawScans;
+      if (crop.enabled) {
+        scans = cropScans(rawScans, crop, xkey);
+        if (Math.min(...scans.map((s) => s.IData.length)) < 10) throw new Error("The data range leaves fewer than 10 points.");
+      }
+      const avg = N.averageScans(N.splitSweeps(scans, xkey), xkey);
+      return { xkey, x: avg.x, imean: avg.imean };
+    },
+    probeArea,
+    ionMass: () => numberValue("ionMass"),
+    /** Adds ni, Te from Vp − Vf and the Te check, as for the main window's results. */
+    addDerived,
+    settingsSummary() {
+      const c = readCrop();
+      return `Probe ${$("diameter").value} × ${$("length").value} mm · ${$("ionGas").value} (${$("ionMass").value} amu) · x axis ${$("xaxis").value}`
+        + (c.enabled ? ` · data range: skip ${c.skipStart}/${c.skipEnd} pts, ${c.from}…${c.to} V` : " · full data range");
+    },
+    settingsSnapshot() {
+      const out = { showAll: $("showAll").checked, showMean: $("showMean").checked, crop: readCrop() };
+      for (const id of settingInputs) out[id] = $(id).value;
+      return out;
+    },
+    /** Opens a batch item in the main window with its reviewed regions and results. */
+    loadIntoMain(item) {
+      setScans(item.scans, item.name);
+      if (item.params) state.params.manual = item.params;
+      if (item.results && (item.status === "accepted" || item.status === "auto")) {
+        setOmlResults(item.results);
+        manualCard(item.results, item.status === "accepted" ? "Batch review result" : "Batch result (accepted without review)");
+      }
+    },
+    log,
+  };
 })(window.IV = window.IV || {});

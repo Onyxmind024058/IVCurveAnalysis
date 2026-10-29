@@ -2,9 +2,7 @@
 
 ### ▶ Open the app: **[onyxmind024058.github.io/IVCurveAnalysis/web/](https://onyxmind024058.github.io/IVCurveAnalysis/web/)**
 
-🧪 Beta with the new **assisted batch review**: [onyxmind024058.github.io/IVCurveAnalysis/web-beta/](https://onyxmind024058.github.io/IVCurveAnalysis/web-beta/), see [Beta: assisted batch review](#beta-assisted-batch-review).
-
-🔬 Pre-alpha for **collecting training data for machine learning**: [onyxmind024058.github.io/IVCurveAnalysis/web-alpha/](https://onyxmind024058.github.io/IVCurveAnalysis/web-alpha/), see [Pre-alpha: machine learning](#pre-alpha-machine-learning). Not for results.
+🧪 Beta for **collecting training data for machine learning**: [onyxmind024058.github.io/IVCurveAnalysis/web-beta/](https://onyxmind024058.github.io/IVCurveAnalysis/web-beta/), see [Beta: machine learning](#beta-machine-learning). (The old pre-alpha address `/web-alpha/` forwards there.)
 
 A browser application for loading Langmuir probe measurements (`.lda` or CSV files), plotting individual and averaged I–V curves, and extracting plasma parameters using automatic OML-style analysis, manual OML analysis, EEDF/EEPF calculation, and an EPFL two-fluid model.
 
@@ -58,12 +56,12 @@ The app lives in the `web/` folder, in the spirit of ImageJ.js:
   - Scans are averaged on an evenly spaced grid over their common voltage range; up/down (triangular) sweeps are split into separate branches.
   - Other fixes: EEDF is smoothed before clipping negatives, rebinning keeps the last point, smoothing windows are always odd, and corrupt `.lda` files give a clear error.
 
-## Beta: assisted batch review
+## Assisted batch review
 
-The beta (`web-beta/`, link at the top) adds **batch review** for a series of measurements (radial profile, pressure or power scan…). It is the stable app plus this feature; it can be installed next to the stable app and has its own offline copy. Feedback is welcome before it moves to the stable version.
+**Batch review** (since 2.4.0) analyses a series of measurements (radial profile, pressure or power scan…):
 
 1. Set the probe, ion species, x axis and data range in the main window as usual; the batch uses the same settings.
-2. Click **Batch review β** → **Add files…** and select all `.lda`/`.csv` files of the series (or drop them on the window). For CSV files the column choice of the first file is reused for the others.
+2. Click **Batch review** → **Add files…** and select all `.lda`/`.csv` files of the series (or drop them on the window). For CSV files the column choice of the first file is reused for the others.
 3. Enter the **parameter** of each file (a number in the file name is filled in automatically) and its name, e.g. *Position (mm)*.
 4. For every curve the app **proposes fit regions** (the straightest part of ln(Ie) between Vf and Vp for Te, a saturation window above Vp, an ion region a few Te below Vf) and gives a status:
    - **✓ good**: the proposal passed every check;
@@ -73,43 +71,41 @@ The beta (`web-beta/`, link at the top) adds **batch review** for a series of me
 6. **Accept all good…** accepts the remaining ✓ curves without opening them. They are marked *✓ unreviewed* in the table and `reviewed_by_human = no` in the export, so this always stays visible.
 7. The **summary plot** shows Te, nₑ, nᵢ, Vp, Vf… against the parameter (filled points: reviewed; open points: not yet). **Export table CSV** writes one row per file. **Save batch** writes one `.ivbatch` file (data, regions, results, statuses); **Open batch…** continues later. **↗** opens a file in the main window (for EEPF, EPFL…).
 
-The proposals never replace the review: they only save the clicks. The quality limits are in `web-beta/js/auto.js` (`LIMITS`).
+The proposals never replace the review: they only save the clicks. The quality limits are in `web/js/auto.js` (`LIMITS`).
 
-## Pre-alpha: machine learning
+## Beta: machine learning
 
-`web-alpha/` is the beta plus the groundwork for a **fit-region model**: a model that learns where people put the fit regions (Vf, ion range, dI/dV Vp line, transition and saturation windows) and proposes them for new curves. It is **trained once** on about **200 reviewed curves** and then **shipped with the app**, ready to use; users do not train anything. The physics (Te, ne, Vp…) is still computed by the normal analysis, and every curve is still reviewed.
+The beta (`web-beta/`, link at the top) is the stable app plus the groundwork for a **fit-region model**: a model that learns where people put the fit regions (Vf, ion range, dI/dV Vp line, transition and saturation windows) and proposes them for new curves. It is **trained once** on about **200 reviewed curves** and then **shipped with the app**, ready to use; users do not train anything. The physics (Te, ne, Vp…) is still computed by the normal analysis, and every curve is still reviewed.
 
-**1. Collect (everyone, in the pre-alpha)**
+**1. Collect (everyone, in the beta)**
 - Every curve you **review and accept** in the batch review or the manual OML window is added to a local training set (curve + your regions + your results + probe/ion/data range). Curves accepted with *Accept all good* (no human look) are **not** added.
-- **Training α** shows the progress towards 200, lists the curves, and **exports** them as one `.ivtrain` file (≈ 40 kB per curve). Send that file to the maintainer. Collection can be switched off in that window.
-- **Already reviewed batches count too:** *Training α → Import .ivtrain / .ivbatch…* takes saved batches (from the beta or the pre-alpha) and adds their curves marked **✔ reviewed**. Curves accepted without review, not reviewed, failed or skipped are left out, and a summary lists them with the reason. Each curve is rebuilt with the settings it was reviewed with and must reproduce its saved results, otherwise it is skipped. Importing the same curve twice does not count it twice.
-- **Settings in batch files:** a saved batch stores the main-window settings (probe, ion species, x axis, data range, smoothing) at the moment of saving, and — since beta 2.4.0-beta.5 / pre-alpha 2.5.0-alpha.2 — also the settings **each reviewed curve** was reviewed with. Older batch files only have the first; if the settings were changed during such a series, its curves that no longer match are skipped on import.
-- The data stays in the browser on that computer until exported; nothing is uploaded.
+- **Training β** shows the progress towards 200, lists the curves, and **exports** them as one `.ivtrain` file (≈ 40 kB per curve). Send that file to the maintainer. Collection can be switched off in that window.
+- **Already reviewed batches count too:** *Training β → Import .ivtrain / .ivbatch…* takes saved batches (from the stable version, the beta or the earlier pre-alpha) and adds their curves marked **✔ reviewed**. Curves accepted without review, not reviewed, failed or skipped are left out, and a summary lists them with the reason. Each curve is rebuilt with the settings it was reviewed with and must reproduce its saved results, otherwise it is skipped. Importing the same curve twice does not count it twice.
+- **Settings in batch files:** a saved batch stores the main-window settings (probe, ion species, x axis, data range, smoothing) at the moment of saving, and — since 2.4.0 — also the settings **each reviewed curve** was reviewed with. Older batch files only have the first; if the settings were changed during such a series, its curves that no longer match are skipped on import.
+- The data stays in the browser on that computer until exported; nothing is uploaded. Curves collected in the pre-alpha are still there in the beta (same browser).
 
 **2. Train (once, maintainer)**
 ```bash
-node web-alpha/ml/train.js data/*.ivtrain                   # writes web-alpha/model/regions-model.js + training-report.md
-node web-alpha/ml/train.js data/*.ivtrain --out /tmp/try    # inspect first without replacing the shipped model
+node web-beta/ml/train.js data/*.ivtrain                   # writes web-beta/model/regions-model.js + training-report.md
+node web-beta/ml/train.js data/*.ivtrain --out /tmp/try    # inspect first without replacing the shipped model
 ```
 - Model: one ridge regression per boundary that learns the **corrections people make to the rule-based proposal**, in units of Te. It is small (a few kB) and explainable.
 - **One model for all gases and probes.** The corrections are in units of Te and the currents only enter as ratios, so the probe area drops out; the ion mass is an input of the model (it changes Vp − Vf and the ion/electron current ratio). Mix the gases and probes you use in the 200 curves. The report shows the accuracy per ion species and per probe: if one group is clearly worse, collect more curves of it. On synthetic Ar⁺/He⁺/Kr⁺ data, one shared model was as good or better for every gas than separate models trained per gas on a third of the curves each. The model assumes a cylindrical probe in the OML regime, like the rest of the analysis.
 - The script validates by **cross-validation** (held-out curves) and corrects only the boundaries where the model beats the rules. `training-report.md` compares rules and model: distance of each boundary to the reviewers' choice, and the resulting Te and Vp errors. **Ship the model only if it is clearly better than the rules.**
-- To try a model in the app before shipping: *Training α → Load model file for testing…* (until the page is reloaded).
+- To try a model in the app before shipping: *Training β → Load model file for testing…* (until the page is reloaded).
 
 **3. Use (after shipping)**
 - In the batch review, *Proposals from: model*. If the model's proposal for a curve gets more quality warnings than the rules' proposal, the rules' one is used (and shown as such). The quality checks and the review are unchanged.
 
-**Pipeline check with synthetic data:** `node web-alpha/ml/synthetic.js 200 > synthetic.ivtrain` makes curves labelled by a simulated reviewer with known habits. Trained on them, the model reduces the error of the dI/dV Vp line from ≈ 1.3 V to ≈ 0.05 V and the Te error against the reviewer from ≈ 0.6 % to ≈ 0.05 % on curves it never saw. Real curves will be harder; the report will tell.
+**Pipeline check with synthetic data:** `node web-beta/ml/synthetic.js 200 > synthetic.ivtrain` makes curves labelled by a simulated reviewer with known habits. Trained on them, the model reduces the error of the dI/dV Vp line from ≈ 1.3 V to ≈ 0.05 V and the Te error against the reviewer from ≈ 0.6 % to ≈ 0.05 % on curves it never saw. Real curves will be harder; the report will tell.
 
 ## Checking the physics (automatic tests)
 
 `web/tests/numerics.test.js` checks the analysis code on synthetic curves with known answers (Te, nₑ, nᵢ, Iis at Vf, EEDF density, Te from Vp − Vf, averaging, EPFL). With [Node.js](https://nodejs.org) 18 or newer, from the repository folder:
 
 ```bash
-node --test web/tests/numerics.test.js
-node --test web/tests/release.test.js
-node --test web-beta/tests/numerics.test.js web-beta/tests/auto.test.js web-beta/tests/release.test.js   # beta
-node --test web-alpha/tests/*.test.js                                                                        # pre-alpha, incl. the model
+node --test web/tests/*.test.js         # stable
+node --test web-beta/tests/*.test.js    # beta, incl. the model
 ```
 
 All tests should report `ok`. Run them after every change to the analysis code.

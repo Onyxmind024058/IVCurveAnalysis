@@ -85,7 +85,7 @@
           name: tr.name,
           showlegend: tr.name !== undefined && !tr.hideLegend,
           line: { color, width: tr.width || 1.6, dash: tr.dash || "solid" },
-          marker: { color, size: 4 },
+          marker: { color, size: tr.markerSize || 4, symbol: tr.symbol || "circle", line: { color, width: 1.5 } },
           hovertemplate: `${tr.name || ""}<br>x=%{x:.4g}<br>y=%{y:.4g}<extra></extra>`,
         });
       }
