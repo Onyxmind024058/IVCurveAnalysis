@@ -8,7 +8,7 @@
 
   const KEY = "ivcurve-alpha.mistralKey", MODEL = "ivcurve-alpha.mistralModel";
   const SKILL = "ivcurve-alpha.agentSkill", CONSENT = "ivcurve-alpha.agentConsent";
-  const BUILTIN_SKILL = "langmuir-probe-analysis (built-in)";
+  const BUILTIN_SKILL = IV.AGENT_SKILL.name;
 
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
@@ -25,9 +25,7 @@
   async function skillText() {
     const custom = customSkill();
     if (custom) return { name: custom.name, text: custom.text };
-    const res = await fetch(`agent/SKILL.md?v=${encodeURIComponent(IV.APP_VERSION)}`);
-    if (!res.ok) throw new Error("The built-in skill could not be loaded.");
-    return { name: BUILTIN_SKILL, text: await res.text() };
+    return { name: BUILTIN_SKILL, text: IV.AGENT_SKILL.text };
   }
 
   // ---------------------------------------------------------------------------

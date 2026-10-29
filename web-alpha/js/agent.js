@@ -1,6 +1,6 @@
 /* =============================================================================
    AI analysis agent (pre-alpha): a Mistral model that analyses one I–V curve
-   with the app's tools (agent-tools.js), guided by a skill (agent/SKILL.md).
+   with the app's tools (agent-tools.js), guided by a skill (agent-skill.js).
 
    The loop: system prompt (preamble + skill) → the model calls tools → the
    app runs them and returns JSON → … → the model calls submit_result. The
