@@ -2,7 +2,7 @@
 name: |
   langmuir-probe-analysis
 description: |
-  Load this skill when the user asks to analyse Langmuir probe I-V curves, traces, or characteristics (single or batch), e.g. Impedans-style XML or .lda experiment files (.lda files are XML content with a different extension; the pipeline detects this by content), or when they mention plasma potential, floating potential, electron temperature, EEDF, or plasma density from probe data. Runs a validated Python pipeline with Vf, Vp (dI/dV peak and fit intersection, with the Vp check in volts), ion-current model and OML ion density, single vs two-temperature Maxwellian fits, Te cross-check from Vp − Vf, Druyvesteyn EEDF, density cross-checks, quality flags, and fit/EEDF plots.
+  Load this skill when the user asks to analyse Langmuir probe I-V curves, traces, or characteristics (single or batch), e.g. Impedans-style XML or .lda experiment files (.lda files are XML content with a different extension; the pipeline detects this by content), or when they mention plasma potential, floating potential, electron temperature, EEDF, or plasma density from probe data. Runs a validated Python pipeline with Vf, Vp (dI/dV peak and fit intersection, with the Vp check in volts), ion-current model and OML ion density, single vs two-temperature Maxwellian fits, Te cross-check from Vp − Vf, Druyvesteyn EEDF, density cross-checks, an RF compensation check, quality flags, and fit/EEDF plots.
 ---
 
 # Langmuir Probe I–V Analysis
@@ -29,6 +29,7 @@ Analyse Langmuir probe traces with the pipeline in `langmuir_pipeline.py` (this 
   - densities: `ne_m3`, `ne_edf_m3`, `ni_OML_m3`, `ni_over_ne`;
   - currents: `I_ion_at_Vf_A` (Iis), `I_is_at_Vmin_A`;
   - fit quality: `r2_transition`, `r2_ion`, `n_saturation_points`, `quality_flags` (list of reasons), `status` (`good` if no flag, else `check`);
+  - RF compensation: `rf_knee_rounding_over_Te`, `rf_compensation` (`good` / `doubtful` / `poor` / `not_checked`), `VpVf_over_expected_OML`;
   - EEDF: `EEDF_reliable_to_eV`, `Te_eff_EEDF_eV`; and `lambda_D_um`.
 - **`--plots DIR`**: one 3-panel PNG per trace: (1) I–V with ion model, Vf, Vp; (2) semilog Ie with 1-T and 2-T fit curves (χ² in legend — this is where the bi-Maxwellian slope break shows); (3) EEDF with 1-T/2-T Maxwellian overlays, noise floor, and reliable-energy limit. Files are named `<basename>_z<zpos>.png` (XML) or `<basename>.png` (CSV); the path is also returned in the JSON as `plot`.
 - **`--npz DIR`**: per-trace arrays (V, I, Ii_model, Ie, sel_V, sel_Ie, fit curves, eedf_E, eedf_f, Maxwellian overlays, noise floor) for building inline charts.
@@ -67,16 +68,21 @@ Analyse Langmuir probe traces with the pipeline in `langmuir_pipeline.py` (this 
     - Te outside 0.2–30 eV;
     - Vp check = `review` (step 9);
     - Te differs by more than 30 % from Te from Vp − Vf (step 8);
-    - ni/ne outside 0.2–5.
-14. **Diagnostics/caveats to report**:
+    - ni/ne outside 0.2–5;
+    - RF compensation poor (step 14).
+14. **RF compensation check** — always do it, and **always say in the report when RF compensation looks insufficient**. RF oscillation of the plasma potential (an RF ripple on the sheath voltage that the probe's compensation — RF chokes tuned to the driving frequency and its harmonics, compensation electrode — does not cancel) time-averages the I–V curve. The exponential part keeps its slope, but the knee at Vp is rounded, Vp and Vf shift, and fits that reach into the knee overestimate Te.
+    - **Main indicator, knee rounding** (`rf_knee_rounding_over_Te`): above the dI/dV peak, a well-compensated curve drops quickly to the saturation slope. The pipeline measures the distance from the peak to where dI/dV has fallen halfway to the saturation level, minus half the smoothing window, in units of Te. Sharp knee ≈ 0.1–0.3; **< 0.4 good, 0.4–0.7 doubtful, > 0.7 poor** (poor corresponds to an RF ripple of about Te or more; it is a quality flag).
+    - **Supporting signs** (each alone is not proof): a large ΔVp between the dI/dV peak and the fit intersection while the transition is straight; Vp − Vf inconsistent with the fitted Te (`VpVf_over_expected_OML` far from 1, Te check mismatch); no cold population below ~1 eV resolved where one is expected; Te rising when the transition window is moved closer to the knee.
+    - **What to report** when `rf_compensation` is `doubtful` or `poor`, or when two or more supporting signs appear: start the trace's status with "RF compensation looks insufficient" (doubtful: "may be insufficient"), name the indicator values, and state the consequences — Vp and Vf are shifted (Vf usually too negative), ne (taken at Vp) and the Vp-based checks are uncertain, Te is reliable only from the straight exponential part well below the knee and is otherwise overestimated, and the EEDF is broadened. Recommend checking the RF compensation (filter resonance at the driving frequency and harmonics, compensation electrode, cabling) and re-measuring. For a batch, list the affected files and leave them out of trend statements.
+15. **Diagnostics/caveats to report**:
     - ion saturation scaling: if I scales with sqrt(Vp−V), the sheath is thick/OML — do NOT quote ni from a Bohm/probe-area formula (it can be 10–30x too high); quote ne and the OML ni (`ni_OML_m3`) instead.
-    - knee sharpness vs Tc: if a cold population (below 1 eV) is resolved, RF compensation is adequate; a smeared knee means RF ripple.
+    - knee sharpness vs Tc: if a cold population (below 1 eV) is resolved, RF compensation is adequate; a smeared knee means RF ripple (step 14).
     - EEDF tail above the noise floor: with µA-level noise, tails beyond ~5 eV are usually not constrained by a single sweep.
 
 ## Reporting
 
-- Report: Vf, Vp (both values, ΔVp and the Vp check level with its reason), Tc/Th with fractions (or single Te if 1-T wins), Te from Vp − Vf (OML and planar) and whether it confirms the fit, ne with ~30% systematic uncertainty, ni (OML) and ni/ne, lambda_D, Iis at Vf, plus the caveats above.
-- **Status first**: start each trace with `good` or `check`, listing every quality flag. A trace with `Vp_check = review` (ΔVp > 5 V, or 2–5 V without Te confirmation) must be presented as **"needs review by eye"**: give the numbers only as provisional and never as final results; suggest which region to adjust (usually the saturation window or the transition window).
+- Report: the RF compensation verdict (step 14), Vf, Vp (both values, ΔVp and the Vp check level with its reason), Tc/Th with fractions (or single Te if 1-T wins), Te from Vp − Vf (OML and planar) and whether it confirms the fit, ne with ~30% systematic uncertainty, ni (OML) and ni/ne, lambda_D, Iis at Vf, plus the caveats above.
+- **Status first**: start each trace with `good` or `check`, listing every quality flag, and the RF compensation verdict when it is not `good` (step 14). A trace with `Vp_check = review` (ΔVp > 5 V, or 2–5 V without Te confirmation) must be presented as **"needs review by eye"**: give the numbers only as provisional and never as final results; suggest which region to adjust (usually the saturation window or the transition window).
 - Cross-checks to state: predicted vs measured Vp−Vf, ne(fit) vs ne(EEDF), ni(OML) vs ne.
 - Always produce the plots (`--plots`) and reference them; for inline visuals in chat, load `rich-ui` and render from the `--npz` arrays: I–V curve, semilog Ie with fits (shows the two-slope structure), EEDF with Maxwellian overlay — the same three panels as the PNG. Subsample long series for charts and keep the full data in files.
 - For a batch, run the script over all files, then build one comparison table (per-file: status, Vf, Vp, ΔVp, Vp check, Tc, Th, ne, ni/ne) — trends across power/pressure/position are usually what the user wants. Mark traces that need review in the table and leave them out of trend statements until reviewed.

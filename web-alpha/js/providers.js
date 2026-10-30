@@ -25,7 +25,7 @@
   const PROVIDERS = [
     { id: "mistral", label: "Mistral", format: "openai", url: "https://api.mistral.ai/v1/chat/completions",
       keyUrl: "https://console.mistral.ai/api-keys", required: "any", parallel: true, temperature: 0.2,
-      models: ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest"] },
+      models: ["mistral-large-latest", "mistral-medium-latest", "mistral-small-latest", "zai-glm-5-3", "zai-glm-latest"] },
     { id: "openai", label: "ChatGPT (OpenAI)", format: "openai", url: "https://api.openai.com/v1/chat/completions",
       keyUrl: "https://platform.openai.com/api-keys", required: "required", parallel: true,
       models: ["gpt-5", "gpt-5-mini", "gpt-4.1"] },

@@ -16,8 +16,12 @@ Quality rules (same as the IV Analyser UB app):
   Vp check   |Vp(dI/dV) - Vp(intersection)| <= 2 V: good; 2-5 V: ok only if the
              Te cross-check from Vp - Vf confirms the fitted Te; > 5 V: review by eye.
   Te check   fitted Te within [0.7*min, 1.3*max] of Te from Vp - Vf (OML and planar).
+  RF check   knee rounding = (distance from the dI/dV peak to half the drop to the
+             saturation slope - half the smoothing window) / Te:
+             < 0.4 good, 0.4-0.7 doubtful, > 0.7 poor (sharp knee ~ 0.1-0.3).
   Flags      transition R^2 < 0.995, ion-fit R^2 < 0.9, < 5 saturation points or no
-             knee, Vp at the end of the sweep, Te outside 0.2-30 eV, ni/ne outside 0.2-5.
+             knee, Vp at the end of the sweep, Te outside 0.2-30 eV, ni/ne outside 0.2-5,
+             RF compensation poor.
 
 NOTE: this file is stored as .py.txt because the Skill registry only allows
 text files. Copy it to a working directory as langmuir_pipeline.py before use:
@@ -36,6 +40,10 @@ VP_GOOD_V, VP_OK_V = 2.0, 5.0          # Vp check: dI/dV peak vs fit intersectio
 TE_CHECK_TOL = 0.30                    # Te vs Te from Vp - Vf
 LIMITS = dict(r2_trans=0.995, r2_ion=0.9, min_sat_pts=5, edge_frac=0.03,
               te_min=0.2, te_max=30.0, ni_ratio=(0.2, 5.0))
+# RF compensation from the knee: distance from the dI/dV peak to where dI/dV has
+# fallen halfway to the saturation slope, minus half the smoothing window, in Te.
+# Sharp knee ~0.1-0.3; RF ripple on the sheath voltage rounds the knee.
+RF_GOOD, RF_POOR = 0.4, 0.7
 
 
 def parse_xml(path):
@@ -305,6 +313,21 @@ def analyse(V, I, A, mass_amu=39.95, minTe=0.3, maxTe=8.0):
     if ni_ratio is not None and not (LIMITS["ni_ratio"][0] <= ni_ratio <= LIMITS["ni_ratio"][1]):
         flags.append("ni/ne = %.2f is far from 1" % ni_ratio)
 
+    # RF compensation: how rounded the knee is above the dI/dV peak
+    m_sat = (V >= Vp + 1.5 * T1) & (V <= Vp + 6 * T1)
+    level = float(np.median(dIdV[m_sat])) if m_sat.sum() >= 3 else 0.0
+    b = k
+    while b < len(V) - 1 and dIdV[b] > (dIdV[k] + level) / 2.0:
+        b += 1
+    knee_rounding = float(V[b] - V[k])
+    rf_ratio = max(knee_rounding - win * step / 2.0, 0.0) / T1
+    if b >= len(V) - 1:
+        rf_state = "not_checked"
+    else:
+        rf_state = "good" if rf_ratio < RF_GOOD else ("doubtful" if rf_ratio <= RF_POOR else "poor")
+    if rf_state == "poor":
+        flags.append("RF compensation looks poor: rounded knee above Vp (%.2f Te; sharp knee < 0.4 Te)" % rf_ratio)
+
     res = dict(
         Vf_V=Vf, Vp_V=Vp, Vp_minus_Vf_V=Vp - Vf,
         Vp_dIdV_V=Vp, Vp_intersection_V=Vp_int,
@@ -313,6 +336,8 @@ def analyse(V, I, A, mass_amu=39.95, minTe=0.3, maxTe=8.0):
         VpVf_factor_OML=factors[0], VpVf_factor_planar=factors[1], Te_check_ok=te_ok,
         r2_transition=r2_trans, r2_ion=r2_ion, n_saturation_points=n_sat,
         ni_OML_m3=ni, ni_over_ne=ni_ratio, ion_mass_amu=mass_amu,
+        rf_knee_rounding_V=knee_rounding, rf_smoothing_window_V=win * step, rf_knee_rounding_over_Te=rf_ratio,
+        rf_compensation=rf_state, VpVf_over_expected_OML=(Vp - Vf) / (factors[0] * T1),
         quality_flags=flags, status="good" if not flags else "check",
         noise_A=sig, ion_model=ion_model, ion_residual_A=r_ion,
         I_ion_at_Vf_A=float(f_ion(Vf, c0, v0)) if ion_model == "oml_sqrt" else float(f_ion(Vf)),

@@ -660,6 +660,8 @@
         "“Provider & key…” in the AI window: one API key and model per provider, all stored only in this browser. Model names can be picked from suggestions or typed; the model must support tool calling.",
         "Before the first request to a provider, the app asks once whether the curve may be sent there.",
         "Keys and the model saved for Mistral in the earlier pre-alpha are kept.",
+        "Mistral also suggests the GLM models it hosts (zai-glm-5-3, zai-glm-latest).",
+        "RF compensation check: the agent measures how rounded the knee above Vp is (in units of Te; sharp knee < 0.4, poor > 0.7 adds a quality flag) and says in its report when the RF compensation looks insufficient, with the consequences for Vp, Vf, ne and Te. The skill and its Python pipeline do the same.",
       ],
     },
     {
