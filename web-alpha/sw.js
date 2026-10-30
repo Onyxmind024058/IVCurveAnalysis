@@ -30,6 +30,7 @@ const APP_FILES = [
   "./js/auto.js",
   "./js/batch.js",
   "./js/agent-tools.js",
+  "./js/providers.js",
   "./js/agent.js",
   "./js/agent-ui.js",
   "./js/agent-skill.js",

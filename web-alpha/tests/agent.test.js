@@ -116,7 +116,7 @@ test("agent loop: tools, final result from the app, message format", async () =>
 
 test("agent loop: clear errors for key, quota and network problems", async () => {
   const ctx = context();
-  await assert.rejects(Agent.run({ ctx, apiKey: "", fetchImpl: async () => ({}) }), /No Mistral API key/);
+  await assert.rejects(Agent.run({ ctx, apiKey: "", fetchImpl: async () => ({}) }), /No API key set for Mistral/);
   await assert.rejects(Agent.run({ ctx, apiKey: "k", fetchImpl: fakeMistral([{ status: 401 }], []) }), /rejected the API key/);
   await assert.rejects(Agent.run({ ctx, apiKey: "k", fetchImpl: fakeMistral(Array(4).fill({ status: 429 }), []) }), /rate limit/);
   await assert.rejects(Agent.run({ ctx, apiKey: "k", fetchImpl: async () => { throw new TypeError("Failed to fetch"); } }), /Could not reach api\.mistral\.ai/);
@@ -192,4 +192,21 @@ test("series summary: one request without tools, rows sent as JSON", async () =>
   assert.equal(seen.length, 1);
   assert.equal(seen[0].body.tools, undefined);
   assert.match(seen[0].body.messages[1].content, /Pressure \(Pa\)[\s\S]*"file":"a\.lda"/);
+});
+
+test("RF compensation: a rounded knee (RF ripple ≈ Te) is reported, a sharp one is not", () => {
+  const mi = AR * N.AMU, Ie0 = AREA * 1e16 * e * Math.sqrt((e * 3) / (2 * Math.PI * me));
+  const I0 = (v) => -AREA * 1e16 * e * (Math.SQRT2 / Math.PI) * Math.sqrt(Math.max((e * (10 - v)) / mi, 0))
+    + (v < 10 ? Ie0 * Math.exp((v - 10) / 3) : Ie0 * (1 + 0.004 * (v - 10)));
+  const V = N.linspace(-60, 25, 850);
+  // time average over an RF ripple of amplitude amp on the sheath voltage
+  const withRipple = (amp) => V.map((v) => { let a = 0; for (let k = 0; k < 64; k++) a += I0(v + amp * Math.sin((2 * Math.PI * k) / 64)); return a / 64; });
+  const check = (amp) => T.call(T.makeContext({ V, I: withRipple(amp), area: AREA, massAmu: AR }), "propose_regions").content;
+  const clean = check(0), rf = check(3);
+  assert.equal(clean.rf_check.rf_compensation, "good");
+  assert.ok(!clean.quality_flags.some((f) => /RF/.test(f)));
+  assert.equal(rf.rf_check.rf_compensation, "poor");
+  assert.ok(rf.rf_check.knee_rounding_over_Te > clean.rf_check.knee_rounding_over_Te + 0.5);
+  assert.ok(rf.quality_flags.some((f) => /RF compensation looks poor/.test(f)));
+  assert.equal(rf.status, "check");
 });

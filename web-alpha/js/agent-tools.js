@@ -89,6 +89,42 @@
     return p;
   }
 
+  /**
+   * RF compensation check from the sharpness of the knee. Above the dIe/dV peak
+   * (dI/dV Vp) a well-compensated probe drops quickly to the saturation slope;
+   * RF ripple on the sheath voltage rounds the knee and stretches that drop.
+   * Measure: distance from the peak to where dIe/dV has fallen halfway to the
+   * saturation level, minus half the smoothing window, in units of Te.
+   * Limits from simulated ripple (sharp knee ≈ 0.1–0.3): < 0.4 good,
+   * 0.4–0.7 doubtful, > 0.7 poor (ripple of about Te or more).
+   */
+  const RF_LIMITS = { good: 0.4, poor: 0.7 };
+  function rfCheck(ctx, p, Te) {
+    try {
+      const { Ie } = A.electronCurrent(ctx.V, ctx.I, p);
+      const v = ctx.V, n = v.length;
+      const d = N.smoothSignal(N.gradient(Ie, v), p.didv.method, N.makeOdd(p.didv.window), p.didv.order);
+      const margin = n > 10 ? 5 : 0;
+      let k = -1;
+      for (let j = margin; j < n - margin; j++) if (v[j] > p.ion.vf && Number.isFinite(d[j]) && (k < 0 || d[j] > d[k])) k = j;
+      if (k < 0 || !(Te > 0)) return null;
+      const sat = [];
+      for (let j = 0; j < n; j++) if (v[j] >= p.log.smin && v[j] <= p.log.smax && Number.isFinite(d[j])) sat.push(d[j]);
+      const level = sat.length ? N.nanmedian(sat) : 0;
+      let b = k;
+      while (b < n - 1 && d[b] > (d[k] + level) / 2) b++;
+      const step = (v[n - 1] - v[0]) / Math.max(n - 1, 1);
+      const smoothing = N.makeOdd(p.didv.window) * step;
+      const rounding = v[b] - v[k];
+      const ratio = Math.max(rounding - smoothing / 2, 0) / Te;
+      return {
+        knee_rounding_V: sig(rounding, 3), smoothing_window_V: sig(smoothing, 3), knee_rounding_over_Te: sig(ratio, 3),
+        rf_compensation: b >= n - 1 ? "not checked (knee at the end of the sweep)"
+          : ratio < RF_LIMITS.good ? "good" : ratio <= RF_LIMITS.poor ? "doubtful" : "poor",
+      };
+    } catch (_) { return null; }
+  }
+
   /** Full evaluation: app results + derived quantities + checks + flags. */
   function evaluate(ctx, p) {
     const r = A.runOMLSteps(ctx.V, ctx.I, ctx.area, p);
@@ -105,7 +141,9 @@
     r.Vp_check = vc.checked ? vc.level : "n/a";
     const flags = A.qualityFlags(r, { ni_m3: r.ni_m3, Te_VpVf_OML_eV: r.Te_VpVf_OML_eV, Te_VpVf_planar_eV: r.Te_VpVf_planar_eV });
     if (!vc.checked) flags.push("Vp check not possible: no fit-intersection Vp (no usable saturation region)");
-    return { results: r, flags, vpCheck: vc, factors: { OML: t.factorOML, planar: t.factorPlanar } };
+    const rf = rfCheck(ctx, p, r.Te_eV);
+    if (rf && rf.rf_compensation === "poor") flags.push(`RF compensation looks poor: rounded knee above Vp (${rf.knee_rounding_over_Te} Te; sharp knee < 0.4 Te)`);
+    return { results: r, flags, vpCheck: vc, factors: { OML: t.factorOML, planar: t.factorPlanar }, rf };
   }
 
   const VP_REASON = {
@@ -129,6 +167,8 @@
       Te_eV: sig(r.Te_eV), Te_VpVf_OML_eV: sig(r.Te_VpVf_OML_eV), Te_VpVf_planar_eV: sig(r.Te_VpVf_planar_eV),
       VpVf_factors: { OML: sig(ev.factors.OML, 3), planar: sig(ev.factors.planar, 3) },
       Te_check: r.Te_check,
+      VpVf_over_expected_OML: sig((r.Vp - r.Vf) / (ev.factors.OML * r.Te_eV), 3),
+      rf_check: ev.rf,
       ne_m3: sig(r.ne_m3, 3), ni_OML_m3: sig(r.ni_m3, 3), ni_over_ne: sig(r.ni_m3 / r.ne_m3, 3),
       Iis_at_Vf_A: sig(r.Iis_A, 3), Ies_A: sig(r.Ies_A, 3),
       fit_quality: {
@@ -274,7 +314,7 @@
     }
   }
 
-  const api = { TOOL_DEFS, makeContext, call, paramsFrom, evaluate, summary, regionsOf };
+  const api = { TOOL_DEFS, makeContext, call, paramsFrom, evaluate, summary, regionsOf, rfCheck, RF_LIMITS };
   if (root.IV) root.IV.agentTools = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);
