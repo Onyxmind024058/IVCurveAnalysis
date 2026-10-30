@@ -68,6 +68,21 @@
     return true;
   }
 
+  const currentModel = () => store.get(MODEL) || IV.agent.MODELS[0][0];
+
+  /** Key (asks for it if missing), consent and skill; null if the user cancels. Shared by the window, the chat and the batch review. */
+  async function prepare() {
+    if (!store.get(KEY)) { await keyDialog(); if (!store.get(KEY)) return null; }
+    if (!(await confirmSending())) return null;
+    try {
+      const skill = await skillText();
+      return { apiKey: store.get(KEY), model: currentModel(), skill };
+    } catch (e) {
+      IV.ui.message("Skill", IV.escape(e.message));
+      return null;
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Step log
   // ---------------------------------------------------------------------------
@@ -113,7 +128,7 @@
     try { curve = IV.app.agentCurve(); } catch (e) { IV.ui.message("No data", IV.escape(e.message)); return; }
     const d = IV.ui.openDialog({ title: "AI analysis α — Mistral agent (pre-alpha)", onClose: () => { if (ui && ui.abort) ui.abort.abort(); ui = null; } });
     d.dlg.classList.add("agent");
-    ui = { d, abort: null, last: null };
+    ui = { d, abort: null, last: null, ctx: null, messages: [] };
 
     // --- side: settings and run --------------------------------------------
     const keyLine = el("span");
@@ -122,7 +137,7 @@
       keyLine.replaceChildren(k ? el("span", { text: `set (…${k.slice(-4)})` }) : el("span.warn-text", { text: "not set" }));
     };
     const modelSel = el("select", {}, IV.agent.MODELS.map(([id, label]) => el("option", { value: id, text: label })));
-    modelSel.value = store.get(MODEL) || IV.agent.MODELS[0][0];
+    modelSel.value = currentModel();
     modelSel.addEventListener("change", () => store.set(MODEL, modelSel.value));
 
     const skillLine = el("span");
@@ -173,7 +188,18 @@
     // --- main: result and steps --------------------------------------------
     const resultBox = el("div.agent-result", {}, [el("div.empty-state", { text: "The result appears here when the agent has finished." })]);
     const steps = el("ul.agent-steps");
-    const main = el("div.agent-main", {}, [resultBox, el("h3", { text: "Steps" }), steps]);
+    const stepsBox = el("details.agent-steps-box", { open: true }, [el("summary", { text: "Steps of the analysis" }), steps]);
+
+    // chat about this curve (continues the analysis when there is one)
+    const chatLog = el("div.agent-chat-log", {}, [el("p.muted", { text: "Ask about this curve, e.g. “Why is the Vp check only ok?”, “Try a transition from −1 to 6 V”, “Is there a second electron temperature?”. The assistant checks with the app's tools before answering." })]);
+    const chatInput = el("textarea", { rows: 2, placeholder: "Your question… (Enter to send, Shift+Enter for a new line)" });
+    const sendBtn = el("button.btn.primary", { text: "Send" });
+    const newChatBtn = el("button.btn", { text: "New chat", title: "Forget the conversation (the result above stays)" });
+    const chatBox = el("section.agent-chat", {}, [
+      el("h3", { text: "Chat about this curve" }), chatLog,
+      el("div.agent-chat-input", {}, [chatInput, el("div.agent-row", {}, [sendBtn, newChatBtn])]),
+    ]);
+    const main = el("div.agent-main", {}, [resultBox, chatBox, stepsBox]);
     d.body.append(el("div.agent-grid", {}, [side, main]));
     d.foot.append(el("span.spacer"), el("button.btn", { text: "Close", onclick: () => d.close() }));
 
@@ -191,25 +217,33 @@
       else if (ev.type === "info") addStep("info", ev.text);
     };
 
+    const busy = (on) => {
+      runBtn.disabled = on; sendBtn.disabled = on; newChatBtn.disabled = on; stopBtn.disabled = !on;
+    };
+
     runBtn.addEventListener("click", async () => {
-      const apiKey = store.get(KEY);
-      if (!apiKey) { await keyDialog(); paintKey(); if (!store.get(KEY)) return; }
-      if (!(await confirmSending())) return;
-      let skill;
-      try { skill = await skillText(); } catch (e) { IV.ui.message("Skill", IV.escape(e.message)); return; }
+      const ready = await prepare();
+      paintKey();
+      if (!ready) return;
+      const skill = ready.skill;
       try { curve = IV.app.agentCurve(); } catch (e) { IV.ui.message("No data", IV.escape(e.message)); return; }
       steps.replaceChildren();
       resultBox.replaceChildren(el("div.empty-state", { text: "The agent is working…" }));
-      runBtn.disabled = true; stopBtn.disabled = false;
+      busy(true);
+      stepsBox.open = true;
       ui.abort = new AbortController();
       const started = Date.now();
       addStep("info", `Model ${modelSel.value} · skill ${skill.name}`);
       try {
         const ctx = IV.agentTools.makeContext(curve);
+        // a new analysis starts a new conversation for the chat
+        ui.ctx = ctx; ui.messages = [];
+        resetChatLog("The chat continues from this analysis.");
         const out = await IV.agent.run({
-          ctx, apiKey: store.get(KEY), model: modelSel.value, skill: skill.text, request: request.value.trim(),
+          ctx, apiKey: ready.apiKey, model: modelSel.value, skill: skill.text, request: request.value.trim(),
           onEvent, signal: ui.abort.signal,
         });
+        if (ui) ui.messages = out.messages;
         const meta = `${out.turns} steps · ${Math.round((Date.now() - started) / 1000)} s · ${out.usage.prompt_tokens + out.usage.completion_tokens} tokens · ${modelSel.value}`;
         if (out.final) showResult(out.final, meta, skill.name);
         else resultBox.replaceChildren(el("div.empty-state", { text: "The agent did not submit a result. Run it again, or try another model." }));
@@ -218,10 +252,61 @@
         else { addStep("res.bad", e.message); IV.ui.toast(e.message, "error", "AI analysis"); }
         resultBox.replaceChildren(el("div.empty-state", { text: "No result." }));
       } finally {
-        if (ui) { ui.abort = null; runBtn.disabled = false; stopBtn.disabled = true; }
+        if (ui) { ui.abort = null; busy(false); }
       }
     });
     stopBtn.addEventListener("click", () => { if (ui && ui.abort) ui.abort.abort(); });
+
+    // --- chat -------------------------------------------------------------
+    function resetChatLog(note) {
+      chatLog.replaceChildren(el("p.muted", { text: note }));
+    }
+    const chatLine = (cls, text) => {
+      const line = el(`div.chat-msg.${cls}`, { text });
+      chatLog.append(line);
+      line.scrollIntoView({ block: "nearest" });
+      return line;
+    };
+
+    async function sendChat() {
+      const text = chatInput.value.trim();
+      if (!text || sendBtn.disabled) return;
+      const ready = await prepare();
+      paintKey();
+      if (!ready) return;
+      if (!ui.ctx) {
+        try { ui.ctx = IV.agentTools.makeContext(IV.app.agentCurve()); } catch (e) { IV.ui.message("No data", IV.escape(e.message)); return; }
+      }
+      chatInput.value = "";
+      chatLine("user", text);
+      const waiting = chatLine("tool", "…");
+      busy(true);
+      ui.abort = new AbortController();
+      try {
+        const out = await IV.agent.converse({
+          ctx: ui.ctx, messages: ui.messages, text, apiKey: ready.apiKey, model: modelSel.value, skill: ready.skill.text,
+          signal: ui.abort.signal,
+          onEvent: (ev) => { if (ev.type === "tool") chatLog.insertBefore(el("div.chat-msg.tool", { text: `→ ${describeCall(ev.name, ev.args)}` }), waiting); },
+        });
+        waiting.remove();
+        if (!ui) return;
+        ui.messages = out.messages;
+        chatLine("ai", out.reply || "(no answer)");
+        if (out.final) {
+          showResult(out.final, `updated from the chat · ${modelSel.value}`, ready.skill.name);
+          chatLine("tool", "The result above was updated with the new regions.");
+        }
+      } catch (e) {
+        waiting.remove();
+        if (e && e.name === "AbortError") chatLine("tool", "Stopped.");
+        else chatLine("err", e.message);
+      } finally {
+        if (ui) { ui.abort = null; busy(false); }
+      }
+    }
+    sendBtn.addEventListener("click", sendChat);
+    chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } });
+    newChatBtn.addEventListener("click", () => { ui.messages = []; ui.ctx = null; resetChatLog("New conversation."); });
 
     function showResult(final, meta, skillName) {
       const s = final.summary, r = final.results;
@@ -266,4 +351,5 @@
   }
 
   IV.openAgent = openAgent;
+  IV.agentUI = { prepare, currentModel, describeCall, describeResult };
 })(window.IV = window.IV || {});

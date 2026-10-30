@@ -593,3 +593,19 @@ table.results td { font-family: var(--font-mono); font-size: 12px; padding: 2px 
 .agent-report { white-space: pre-wrap; font-size: 13px; line-height: 1.45; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; background: var(--backdrop); }
 pre.agent-skill { white-space: pre-wrap; font-size: 12px; max-height: 60vh; overflow: auto; margin: 0; }
 @media (max-width: 800px) { .agent-grid { grid-template-columns: 1fr; overflow: auto; } }
+.agent-chat { margin-top: 14px; border-top: 1px solid var(--border); }
+.agent-chat-log { max-height: 340px; overflow: auto; display: flex; flex-direction: column; gap: 6px; padding: 4px 0; }
+.chat-msg { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.45; padding: 6px 10px; border-radius: var(--radius); max-width: 88%; }
+.chat-msg.user { align-self: flex-end; background: color-mix(in srgb, var(--mint) 40%, transparent); }
+.chat-msg.ai { align-self: flex-start; background: var(--backdrop); border: 1px solid var(--border); }
+.chat-msg.tool { align-self: flex-start; padding: 0 10px; color: var(--text-lo); font-family: var(--font-mono); font-size: 11.5px; }
+.chat-msg.err { align-self: flex-start; color: var(--red); }
+.agent-chat-input { display: flex; gap: 8px; align-items: flex-end; margin-top: 6px; }
+.agent-chat-input textarea { flex: 1; font: inherit; font-size: 13px; resize: vertical; }
+.agent-steps-box { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 8px; }
+.agent-steps-box summary { cursor: pointer; font-weight: 600; font-size: 13px; margin-bottom: 6px; }
+.btn.ai { border-color: #7A5FA8; }
+.ai-tag { display: inline-block; margin-left: 4px; padding: 0 5px; border-radius: 8px; font-size: 10.5px; font-weight: 600; background: #7A5FA8; color: #fff; vertical-align: middle; }
+.batch-detail details.ai-report { margin: 4px 0 6px; font-size: 12.5px; }
+.batch-detail details.ai-report summary { cursor: pointer; }
+.batch-detail details.ai-report .agent-report { max-height: 180px; overflow: auto; margin-top: 4px; }
