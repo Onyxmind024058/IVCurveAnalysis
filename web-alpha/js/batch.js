@@ -35,7 +35,8 @@
     ["Te_VpVf_OML_eV", "Te from Vp − Vf, OML (eV)"], ["Iis_A", "Iis at Vf (A)"], ["Ies_A", "Ies (A)"],
   ];
 
-  const batch = { paramName: "Parameter", items: [], csvMapping: null, startFrom: "proposal", proposalSource: "rules", variable: "Te_eV", selected: -1 };
+  const batch = { paramName: "Parameter", items: [], csvMapping: null, startFrom: "proposal", proposalSource: "rules", variable: "Te_eV", selected: -1,
+    aiSummary: null, aiRun: null };
   let nextId = 1;
   let ui = null;  // open window, if any
 
@@ -200,6 +201,134 @@
   }
 
   // ---------------------------------------------------------------------------
+  // AI pre-review (pre-alpha): the Mistral agent analyses each curve
+  // ---------------------------------------------------------------------------
+
+  /** The agent's result becomes the curve's proposal (and its result until a person reviews it). */
+  function applyAI(item, final, model, area) {
+    const r = final.results;
+    IV.app.addDerived(r, area);
+    item.proposal = final.params;
+    item.proposalSource = `AI agent (${model})`;
+    item.proposalFlags = final.flags;
+    item.ai = { status: final.summary.status, report: final.report, model, at: new Date().toISOString() };
+    item.error = null;
+    if (!item.reviewed) {
+      item.params = final.params;
+      item.results = r;
+      item.flags = final.flags;
+      item.status = final.flags.length ? "check" : "good";
+    }
+  }
+
+  async function aiPreReview() {
+    if (batch.aiRun) { batch.aiRun.abort(); return; }
+    const todo = batch.items.filter((it) => !DONE.has(it.status) && !it.reviewed);
+    if (!todo.length) { IV.ui.toast("No curves left to pre-review: all are reviewed, accepted or skipped."); return; }
+    const ready = await IV.agentUI.prepare();
+    if (!ready) return;
+    const flagged = todo.filter((it) => it.status !== "good");
+    const choice = await IV.ui.message("AI pre-review of the batch",
+      `<p style="margin:0 0 8px">The Mistral agent (<b>${IV.escape(ready.model)}</b>, skill ${IV.escape(ready.skill.name)}) analyses the curves one after the other,
+       like the single-curve AI analysis. Its regions become each curve's proposal: <b>Review next</b> then opens the curves with the AI's regions,
+       and nothing counts as reviewed until a person accepts it.</p>
+       <p style="margin:0 0 8px">About 5–10 requests per curve; at most one request per second. At the end the agent writes a short summary of the series.</p>
+       <p class="muted" style="margin:0">Curves not reviewed yet: ${todo.length} (${flagged.length} with ⚠ check or ✗ failed).</p>`,
+      [{ label: "Cancel" },
+        ...(flagged.length && flagged.length < todo.length ? [{ label: `Only ⚠ / ✗ curves (${flagged.length})`, value: "flagged" }] : []),
+        { label: `Pre-review ${todo.length} curve${todo.length > 1 ? "s" : ""}`, value: "all", primary: true }]);
+    if (choice !== "all" && choice !== "flagged") return;
+    const list = choice === "flagged" ? flagged : todo;
+
+    const abort = new AbortController();
+    batch.aiRun = abort;
+    const area = IV.app.probeArea();
+    let done = 0, failed = 0, stopped = false;
+    const progress = (text) => { batch.aiProgress = text; render(); };
+    try {
+      for (const item of list) {
+        if (abort.signal.aborted) { stopped = true; break; }
+        progress(`AI: ${done + failed + 1} / ${list.length} — ${item.name}`);
+        select(batch.items.indexOf(item));
+        let curve;
+        try { curve = IV.app.curveFor(item.scans); } catch (e) { item.ai = { status: "error", report: e.message, model: ready.model }; failed++; continue; }
+        const ctx = IV.agentTools.makeContext(IV.app.agentInput(curve, item.name));
+        const out = await IV.agent.run({ ctx, apiKey: ready.apiKey, model: ready.model, skill: ready.skill.text, signal: abort.signal });
+        if (out.final) { applyAI(item, out.final, ready.model, area); done++; } else { item.ai = { status: "no result", report: "The agent did not submit a result.", model: ready.model }; failed++; }
+        render();
+      }
+    } catch (e) {
+      if (e && e.name === "AbortError") stopped = true;
+      else IV.ui.message("AI pre-review stopped", `<p>${IV.escape(e.message)}</p><p class="muted">Curves analysed so far keep their AI proposals.</p>`);
+      if (e && e.name !== "AbortError") failed = -1;
+    } finally {
+      batch.aiRun = null;
+      batch.aiProgress = "";
+      render();
+    }
+    IV.ui.toast(`AI pre-review ${stopped ? "stopped" : "finished"}: ${done} curve${done === 1 ? "" : "s"} analysed${failed > 0 ? `, ${failed} without result` : ""}.`);
+    if (!stopped && failed >= 0 && batch.items.filter((it) => it.results).length >= 2) aiSummary(ready);
+  }
+
+  /** Table of app results for the series summary. */
+  function summaryRows() {
+    const r3 = (x) => (Number.isFinite(x) ? Number(x.toPrecision(4)) : null);
+    return batch.items.map((it) => {
+      const r = it.results || {};
+      return {
+        file: it.name, param: it.param,
+        status: it.status === "accepted" ? "reviewed by a person" : it.status === "rejected" ? "skipped (not analysable)"
+          : it.status === "auto" ? "accepted without review" : it.ai && it.ai.status && it.proposalSource && it.proposalSource.startsWith("AI") ? `AI only (${it.status})` : `rules only (${it.status})`,
+        quality_flags: it.flags || [],
+        Te_eV: r3(r.Te_eV), Te_VpVf_OML_eV: r3(r.Te_VpVf_OML_eV), Te_VpVf_planar_eV: r3(r.Te_VpVf_planar_eV),
+        ne_m3: r3(r.ne_m3), ni_m3: r3(r.ni_m3), ni_over_ne: r3(r.ni_m3 / r.ne_m3),
+        Vp_V: r3(r.Vp), Vp_dIdV_V: r3(r.Vp_dIdV), Vp_intersection_V: r3(r.Vp_intersection), Vp_difference_V: r3(r.Vp_difference_V), Vp_check: r.Vp_check ?? null,
+        Vf_V: r3(r.Vf),
+      };
+    });
+  }
+
+  async function aiSummary(prepared) {
+    if (!batch.items.some((it) => it.results)) { IV.ui.toast("No results to summarise yet."); return; }
+    const ready = prepared || await IV.agentUI.prepare();
+    if (!ready) return;
+    batch.aiProgress = "AI: writing the summary of the series…";
+    render();
+    try {
+      const out = await IV.agent.summarizeSeries({
+        rows: summaryRows(), paramName: batch.paramName, settings: IV.app.settingsSummary(),
+        apiKey: ready.apiKey, model: ready.model, skill: ready.skill.text,
+      });
+      batch.aiSummary = { text: out.text, model: ready.model, at: new Date().toISOString() };
+      render();
+      showSummary();
+    } catch (e) {
+      IV.ui.message("AI summary failed", IV.escape(e.message));
+    } finally {
+      batch.aiProgress = "";
+      render();
+    }
+  }
+
+  function showSummary() {
+    const s = batch.aiSummary;
+    if (!s) return;
+    const d = IV.ui.openDialog({ title: "AI summary of the series", padded: true });
+    d.dlg.classList.add("medium");
+    d.body.style.overflow = "auto";
+    d.body.append(
+      el("p.muted", { style: "margin:0 0 8px;font-size:12px", text: `${s.model} · ${new Date(s.at).toLocaleString()} · from the table of app results; the text is the AI's own.` }),
+      el("div.agent-report", { text: s.text || "(empty)" }),
+    );
+    d.foot.append(
+      el("button.btn", { text: "Copy", onclick: () => navigator.clipboard.writeText(s.text).then(() => IV.ui.toast("Summary copied.")) }),
+      el("button.btn", { text: "Write again", onclick: () => { d.close(); aiSummary(); } }),
+      el("span.spacer"),
+      el("button.btn.primary", { text: "Close", onclick: () => d.close() }),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // Save / open / export
   // ---------------------------------------------------------------------------
 
@@ -225,12 +354,13 @@
     if (!batch.items.length) return;
     const data = {
       format: "ivcurve-batch", format_version: 1, app_version: IV.APP_VERSION, saved_at: new Date().toISOString(),
-      settings: IV.app.settingsSnapshot(), param_name: batch.paramName, start_from: batch.startFrom,
+      settings: IV.app.settingsSnapshot(), param_name: batch.paramName, start_from: batch.startFrom, ai_summary: batch.aiSummary,
       items: batch.items.map((it) => ({
         name: it.name, param: it.param, status: it.status, reviewed: it.reviewed, flags: it.flags || [],
         scans: it.scans.map((s) => plain({ id: s.id, label: s.label ?? null, VData: s.VData, RefData: s.RefData, IData: s.IData })),
         params: plain(it.params), results: plain(it.results), proposal: plain(it.proposal),
         settings: it.settings ? plain(it.settings) : null,
+        proposal_source: it.proposalSource || null, ai: it.ai || null,
       })),
     };
     IV.ui.download(`batch_${new Date().toISOString().slice(0, 10)}.ivbatch`, JSON.stringify(data), "application/json");
@@ -242,6 +372,7 @@
     if (!data || data.format !== "ivcurve-batch") { IV.ui.toast(`${file.name} is not a saved batch.`, "error"); return; }
     batch.paramName = data.param_name || "Parameter";
     batch.startFrom = data.start_from || "proposal";
+    if (data.ai_summary) batch.aiSummary = data.ai_summary;
     for (const it of data.items) {
       const scans = it.scans.map((s) => { const r = revive(s); if (typeof r.label !== "string") delete r.label; return r; });
       const toObj = (x) => (x && typeof x === "object" ? revive(x) : null);
@@ -249,6 +380,7 @@
         id: nextId++, name: it.name, param: it.param ?? "", status: it.status, reviewed: !!it.reviewed, flags: it.flags || [],
         scans, params: toObj(it.params), results: toObj(it.results), proposal: toObj(it.proposal),
         settings: it.settings || null,
+        proposalSource: it.proposal_source || undefined, ai: it.ai || undefined,
       });
     }
     IV.ui.toast(`Batch opened: ${data.items.length} files (saved ${new Date(data.saved_at).toLocaleString()}).`);
@@ -256,7 +388,7 @@
   }
 
   function exportCSV() {
-    const cols = ["file", batch.paramName || "parameter", "status", "reviewed_by_human",
+    const cols = ["file", batch.paramName || "parameter", "status", "reviewed_by_human", "proposal_from",
       "Te_eV", "Te_VpVf_OML_eV", "Te_VpVf_planar_eV", "Te_check", "ne_m3", "ni_m3", "ni_over_ne",
       "Vp", "Vp_dIdV", "Vp_intersection", "Vp_difference_V", "Vp_check", "Vf", "Iis_A", "Ies_A", "flags"];
     const cell = (v) => {
@@ -267,7 +399,7 @@
     const lines = [`# ${IV.app.settingsSummary()}`, cols.map(cell).join(",")];
     for (const it of batch.items) {
       const r = it.results || {};
-      lines.push([it.name, it.param, it.status, it.status === "accepted" || it.status === "rejected" ? "yes" : "no",
+      lines.push([it.name, it.param, it.status, it.status === "accepted" || it.status === "rejected" ? "yes" : "no", it.proposalSource || "rules",
         r.Te_eV, r.Te_VpVf_OML_eV, r.Te_VpVf_planar_eV, r.Te_check, r.ne_m3, r.ni_m3, r.ni_m3 / r.ne_m3,
         r.Vp, r.Vp_dIdV, r.Vp_intersection, r.Vp_difference_V, r.Vp_check, r.Vf, r.Iis_A, r.Ies_A, (it.flags || []).join("; ")].map(cell).join(","));
     }
@@ -280,7 +412,7 @@
 
   function openBatch() {
     if (ui) return;
-    const d = IV.ui.openDialog({ title: "Batch review", onClose: () => { ui = null; } });
+    const d = IV.ui.openDialog({ title: "Batch review", onClose: () => { ui = null; if (batch.aiRun) batch.aiRun.abort(); } });
     d.dlg.classList.add("batch");
     d.foot.remove();
 
@@ -312,11 +444,17 @@
 
     const btn = (text, onclick, cls = "") => el(`button.btn${cls}`, { text, onclick });
     const reviewBtn = btn("Review next ▶", () => reviewNext(batch.selected), ".primary");
+    const aiBtn = btn("AI pre-review α…", aiPreReview, ".ai");
+    aiBtn.title = "The Mistral agent analyses every curve not yet reviewed; its regions become the proposals you review";
+    const aiSumBtn = btn("AI summary α", () => (batch.aiSummary ? showSummary() : aiSummary()), ".ai");
+    aiSumBtn.title = "Summary of the series written by the Mistral agent from the table of results";
     const controls = el("div.controls", { style: "border-top:none;border-bottom:1px solid var(--border)" }, [
       btn("Add files…", () => fileInput.click()), fileInput,
       reviewBtn,
       btn("Accept all good…", acceptAllGood),
       btn("Re-propose unreviewed", () => { for (const it of batch.items) if (!it.reviewed) analyse(it); render(); IV.ui.toast("Proposals updated with the current settings."); }),
+      el("span.sep-v"),
+      aiBtn, aiSumBtn,
       el("span.sep-v"),
       el("div.field", {}, [el("label", { text: "Parameter name:" }), paramName]),
       el("div.field", {}, [el("label", { text: "Start review from:" }), startFrom]),
@@ -356,7 +494,7 @@
     d.dlg.addEventListener("dragover", (e) => { e.preventDefault(); e.stopPropagation(); });
     d.dlg.addEventListener("drop", (e) => { e.preventDefault(); e.stopPropagation(); addFiles(e.dataTransfer.files); });
 
-    ui = { d, tbody, table, empty, settings, summary, preview, detail, reviewBtn, paramName, startFrom };
+    ui = { d, tbody, table, empty, settings, summary, preview, detail, reviewBtn, paramName, startFrom, aiBtn, aiSumBtn };
     render();
   }
 
@@ -371,7 +509,10 @@
     // a reopened batch brings its own parameter name and review mode
     if (document.activeElement !== ui.paramName) ui.paramName.value = batch.paramName;
     ui.startFrom.value = batch.startFrom;
-    settings.textContent = `Settings from the main window: ${IV.app.settingsSummary()}`;
+    settings.textContent = `Settings from the main window: ${IV.app.settingsSummary()}${batch.aiProgress ? ` · ${batch.aiProgress}` : ""}`;
+    ui.aiBtn.textContent = batch.aiRun ? "Stop AI" : "AI pre-review α…";
+    ui.aiSumBtn.textContent = batch.aiSummary ? "AI summary α ✓" : "AI summary α";
+    ui.aiSumBtn.disabled = !!batch.aiRun;
     const has = batch.items.length > 0;
     empty.classList.toggle("hidden", has);
     table.classList.toggle("hidden", !has);
@@ -398,7 +539,8 @@
         el("td", { text: String(k + 1) }),
         el("td.file", { text: it.name, title: it.name }),
         el("td", {}, [param]),
-        el("td", {}, [el(`span.status.${it.status}`, { text: st.text, title: it.flags && it.flags.length ? it.flags.join("\n") : st.title })]),
+        el("td", {}, [el(`span.status.${it.status}`, { text: st.text, title: it.flags && it.flags.length ? it.flags.join("\n") : st.title }),
+          it.proposalSource && it.proposalSource.startsWith("AI") ? el("span.ai-tag", { text: "AI", title: `Proposal from the ${it.proposalSource}` }) : null]),
         el("td", { text: fmtG(r.Te_eV, 4) }),
         el("td", { text: fmtE(r.ne_m3, 2) }),
         el("td", { text: fmtG(r.ni_m3 / r.ne_m3, 3) }),
@@ -467,6 +609,7 @@
       el("p", {}, [el(`span.status.${it.status}`, { text: st.text }), " ", st.title,
         it.proposalSource ? el("span.muted", { text: ` · proposal from the ${it.proposalSource}` }) : null]),
       flags.length ? el("ul", {}, flags.map((f) => el("li", { text: f }))) : el("p.muted", { text: "No warnings." }),
+      it.ai ? el("details.ai-report", {}, [el("summary", { text: `AI report (${it.ai.model})` }), el("div.agent-report", { text: it.ai.report || "(none)" })]) : null,
       el("p.muted", { text: "Shaded on the plot: transition (left) and saturation (right) fit regions." }),
     );
   }

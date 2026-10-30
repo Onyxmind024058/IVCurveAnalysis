@@ -12,6 +12,10 @@ const N = require("../js/numerics.js");
 const T = require("../js/agent-tools.js");
 const Agent = require("../js/agent.js");
 
+// no waiting in the tests (the app spaces requests by ~1 s and retries a 429 after a pause)
+Agent.pacing.minIntervalMs = 0;
+Agent.pacing.retryDelaysMs = [0, 0, 0];
+
 const e = N.E_CHARGE, me = N.M_E;
 const AREA = Math.PI * 0.15e-3 * 10e-3;
 const AR = 39.948;
@@ -114,7 +118,7 @@ test("agent loop: clear errors for key, quota and network problems", async () =>
   const ctx = context();
   await assert.rejects(Agent.run({ ctx, apiKey: "", fetchImpl: async () => ({}) }), /No Mistral API key/);
   await assert.rejects(Agent.run({ ctx, apiKey: "k", fetchImpl: fakeMistral([{ status: 401 }], []) }), /rejected the API key/);
-  await assert.rejects(Agent.run({ ctx, apiKey: "k", fetchImpl: fakeMistral([{ status: 429 }], []) }), /rate limit/);
+  await assert.rejects(Agent.run({ ctx, apiKey: "k", fetchImpl: fakeMistral(Array(4).fill({ status: 429 }), []) }), /rate limit/);
   await assert.rejects(Agent.run({ ctx, apiKey: "k", fetchImpl: async () => { throw new TypeError("Failed to fetch"); } }), /Could not reach api\.mistral\.ai/);
 });
 
@@ -130,4 +134,62 @@ test("the built-in skill is the maintained skill file", () => {
   const shipped = fs.readFileSync(sync.target, "utf8");
   assert.equal(shipped, sync.build(fs.readFileSync(sync.source, "utf8")), "run: node web-alpha/tools/sync-skill.js");
   assert.match(require("../js/agent-skill.js").text, /Vp check in volts/);
+});
+
+test("a 429 (rate limit) is retried before giving up", async () => {
+  const seen = [];
+  const regions = { ion_vmin: -59, ion_vmax: -20, trans_min: -2, trans_max: 7, sat_min: 13, sat_max: 19 };
+  const fetchImpl = fakeMistral([{ status: 429 }, { status: 429 }, { calls: [["submit_result", { ...regions, report: "ok" }]] }], seen);
+  const out = await Agent.run({ ctx: context(), apiKey: "k", fetchImpl });
+  assert.ok(out.final);
+  assert.equal(seen.length, 3);
+});
+
+test("chat: tools before the answer, auto tool choice, numbers from the app", async () => {
+  const seen = [], events = [];
+  const fetchImpl = fakeMistral([
+    { calls: [["evaluate_regions", { ion_vmin: -59, ion_vmax: -20, trans_min: -2, trans_max: 7, sat_min: 13, sat_max: 19 }]] },
+    { text: "With these regions Te is 3.0 eV and the Vp check is good." },
+  ], seen);
+  const out = await Agent.converse({ ctx: context(), text: "Is Te reliable?", apiKey: "k", skill: "SKILL", fetchImpl, onEvent: (ev) => events.push(ev) });
+  assert.equal(out.reply, "With these regions Te is 3.0 eV and the Vp check is good.");
+  assert.equal(out.final, null);
+  assert.equal(seen[0].body.tool_choice, "auto");
+  assert.match(seen[0].body.messages[0].content, /analysis assistant[\s\S]*--- SKILL ---\nSKILL$/);
+  assert.equal(seen[0].body.messages.at(-1).content, "Is Te reliable?");
+  assert.deepEqual(events.filter((e) => e.type === "tool").map((e) => e.name), ["evaluate_regions"]);
+  // the conversation continues with the returned messages
+  const next = await Agent.converse({ ctx: context(), messages: out.messages, text: "Thanks", apiKey: "k", fetchImpl: fakeMistral([{ text: "You are welcome." }], seen) });
+  assert.equal(next.reply, "You are welcome.");
+  assert.equal(seen.at(-1).body.messages.filter((m) => m.role === "user").length, 3);
+});
+
+test("chat after an analysis continues its conversation and can change the result", async () => {
+  const regions = { ion_vmin: -59, ion_vmax: -20, trans_min: -2, trans_max: 7, sat_min: 13, sat_max: 19 };
+  const ctx = context();
+  const first = await Agent.run({ ctx, apiKey: "k", skill: "S", fetchImpl: fakeMistral([{ calls: [["submit_result", { ...regions, report: "r" }]] }], []) });
+  const seen = [];
+  const out = await Agent.converse({ ctx, messages: first.messages, text: "Use a narrower transition, -1 to 6 V.", apiKey: "k",
+    fetchImpl: fakeMistral([{ calls: [["submit_result", { ...regions, trans_min: -1, trans_max: 6, report: "narrower" }]] }, { text: "Done." }], seen) });
+  assert.equal(out.reply, "Done.");
+  assert.ok(out.final && out.final.params.log.tmin === -1, "new result submitted");
+  assert.match(seen[0].body.messages.at(-1).content, /^\(Follow-up question/);
+});
+
+test("the last chat turn has to answer in text", async () => {
+  const seen = [];
+  const out = await Agent.converse({ ctx: context(), text: "?", apiKey: "k", maxTurns: 3,
+    fetchImpl: fakeMistral([{ calls: [["get_curve_overview", {}]] }, { calls: [["get_curve_overview", {}]] }, { text: "Answer." }], seen) });
+  assert.equal(out.reply, "Answer.");
+  assert.deepEqual(seen.map((x) => x.body.tool_choice), ["auto", "auto", "none"]);
+});
+
+test("series summary: one request without tools, rows sent as JSON", async () => {
+  const seen = [];
+  const rows = [{ file: "a.lda", param: "10", status: "reviewed", Te_eV: 3.1 }, { file: "b.lda", param: "20", status: "AI only", Te_eV: 2.8 }];
+  const out = await Agent.summarizeSeries({ rows, paramName: "Pressure (Pa)", apiKey: "k", skill: "S", fetchImpl: fakeMistral([{ text: "Te falls with pressure." }], seen) });
+  assert.equal(out.text, "Te falls with pressure.");
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].body.tools, undefined);
+  assert.match(seen[0].body.messages[1].content, /Pressure \(Pa\)[\s\S]*"file":"a\.lda"/);
 });

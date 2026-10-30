@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.6.0-alpha.1";
+  const APP_VERSION = "2.6.0-alpha.2";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -653,6 +653,17 @@
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
     {
+      version: "2.6.0-alpha.2",
+      title: "AI batch pre-review and chat",
+      items: [
+        "Batch review → AI pre-review α: the Mistral agent analyses every curve not reviewed yet (or only the ⚠/✗ ones). Its regions become the proposals, so “Review next” opens each curve with the AI's regions; curves with an AI proposal are tagged “AI”, and the agent's report is shown under the curve. Nothing counts as reviewed until a person accepts it.",
+        "AI summary α: at the end (or on demand) the agent writes a summary of the series from the table of app results: what still needs review, trends against your parameter, outliers.",
+        "AI analysis window: chat about the loaded curve. The assistant checks with the app's tools before answering, can try other regions on request, and continues from the analysis just run.",
+        "Requests are spaced to at most one per second and a rate-limit answer (429) is retried, so the free Mistral tier works for batches too.",
+        "Saved batches keep the AI proposals, reports and summary; the CSV export says where each proposal came from.",
+      ],
+    },
+    {
       version: "2.6.0-alpha.1",
       title: "Pre-alpha: AI analysis with a Mistral agent",
       items: [
@@ -944,9 +955,13 @@
     /** The mean curve and settings the AI agent analyses. */
     agentCurve() {
       const { xkey, x, imean } = meanCurve();
+      return IV.app.agentInput({ xkey, x, imean }, state.fileName || "");
+    },
+    /** Agent input for a mean curve ({xkey, x, imean}) with the main window's probe and ion settings. */
+    agentInput({ xkey, x, imean }, file) {
       return {
         V: x, I: imean, xkey, area: probeArea(), massAmu: numberValue("ionMass"), species: $("ionGas").value,
-        probe: { diameter_mm: numberValue("diameter"), length_mm: numberValue("length") }, file: state.fileName || "",
+        probe: { diameter_mm: numberValue("diameter"), length_mm: numberValue("length") }, file,
       };
     },
     /** Opens the manual OML window starting from the AI agent's regions (accepting it counts as a review). */
