@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.4.0";
+  const APP_VERSION = "2.4.1";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -657,6 +657,13 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.4.1",
+      title: "Save as",
+      items: [
+        "Every save and export (analysis .ivsession, batch .ivbatch, training data .ivtrain, CSV exports) now asks for the file name. In Chrome and Edge the computer's own Save-as window opens, so the folder can be chosen too; in other browsers a small window proposes the name, which can be changed.",
+      ],
+    },
     {
       version: "2.4.0",
       title: "Assisted batch review",

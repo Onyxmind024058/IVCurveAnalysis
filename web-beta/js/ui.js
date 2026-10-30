@@ -65,14 +65,69 @@
     setTimeout(() => node.remove(), kind === "error" ? 7000 : 3500);
   }
 
-  function download(filename, content, mime = "text/plain") {
-    const blob = content instanceof Blob ? content : new Blob([content], { type: mime });
+  /** Saves through the browser's download (the name is final; used after Save as). */
+  function downloadNamed(filename, blob) {
     const url = URL.createObjectURL(blob);
     const a = el("a", { href: url, download: filename });
     document.body.append(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  const extOf = (name) => (name.match(/(\.[A-Za-z0-9]+)$/) || [""])[0];
+
+  /** Name chosen in a small window (browsers without a native Save as); null if cancelled. */
+  function askFileName(suggested) {
+    return new Promise((resolve) => {
+      let result = null;
+      const d = openDialog({ title: "Save as", small: true, padded: true, onClose: () => resolve(result) });
+      const input = el("input", { type: "text", value: suggested, spellcheck: "false", style: "width:100%" });
+      const ok = () => {
+        let name = input.value.trim().replace(/[\\/:*?"<>|]+/g, "_");
+        if (!name) return;
+        const ext = extOf(suggested);
+        if (ext && !name.toLowerCase().endsWith(ext.toLowerCase())) name += ext;  // keep the file type
+        result = name;
+        d.close();
+      };
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") ok(); });
+      d.body.append(el("label", { text: "File name", style: "display:block;font-size:12.5px;margin-bottom:3px" }), input,
+        el("p.muted", { style: "margin:8px 0 0;font-size:12px", text: "The file goes to your browser's download folder (or the browser asks where, depending on its settings)." }));
+      d.foot.append(el("button.btn", { text: "Cancel", onclick: () => d.close() }), el("button.btn.primary", { text: "Save", onclick: ok }));
+      input.focus();
+      const ext = extOf(suggested);
+      input.setSelectionRange(0, suggested.length - ext.length);  // select the name, not the extension
+    });
+  }
+
+  /**
+   * Save as: the user chooses the file name (and, where the browser offers its
+   * own Save-as window — Chrome, Edge — also the folder). suggested is the
+   * proposed name. Resolves to the saved name, or null if cancelled.
+   */
+  async function download(suggested, content, mime = "text/plain") {
+    const blob = content instanceof Blob ? content : new Blob([content], { type: mime });
+    const ext = extOf(suggested);
+    if (typeof window.showSaveFilePicker === "function") {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: suggested,
+          types: ext ? [{ description: `${ext.slice(1).toUpperCase()} file`, accept: { [mime.split(";")[0] || "application/octet-stream"]: [ext] } }] : undefined,
+        });
+        const w = await handle.createWritable();
+        await w.write(blob);
+        await w.close();
+        toast(`Saved as ${handle.name}`);
+        return handle.name;
+      } catch (e) {
+        if (e && e.name === "AbortError") return null;  // cancelled by the user
+        // not allowed here (e.g. no recent click, or an unusual file type): ask in the app instead
+      }
+    }
+    const name = await askFileName(suggested);
+    if (name) downloadNamed(name, blob);
+    return name;
   }
 
   // ---------------------------------------------------------------------------

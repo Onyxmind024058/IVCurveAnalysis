@@ -287,7 +287,7 @@
       el("div.field", {}, [el("label", { text: "Parameter name:" }), paramName]),
       el("div.field", {}, [el("label", { text: "Start review from:" }), startFrom]),
       el("span.spacer"),
-      btn("Save batch", saveBatch), btn("Open batch…", () => fileInput.click()), btn("Export table CSV", exportCSV),
+      btn("Save batch…", saveBatch), btn("Open batch…", () => fileInput.click()), btn("Export table CSV…", exportCSV),
     ]);
 
     const settings = el("p.batch-settings");
