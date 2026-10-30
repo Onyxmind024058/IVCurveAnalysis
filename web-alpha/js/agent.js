@@ -1,22 +1,20 @@
 /* =============================================================================
-   AI analysis agent (pre-alpha): a Mistral model that analyses one I–V curve
+   AI analysis agent (pre-alpha): a language model that analyses one I–V curve
    with the app's tools (agent-tools.js), guided by a skill (agent-skill.js).
 
    The loop: system prompt (preamble + skill) → the model calls tools → the
    app runs them and returns JSON → … → the model calls submit_result. The
-   key is the user's own Mistral API key; requests go straight from the
-   browser to api.mistral.ai. No DOM here, so it also runs under Node.
+   key is the user's own API key for the chosen provider (providers.js:
+   Mistral, ChatGPT, Claude, Gemini, Groq or any OpenAI-compatible address);
+   requests go straight from the browser to that provider. No DOM here, so it
+   also runs under Node.
    ============================================================================= */
 (function (root) {
   "use strict";
   const T = (root.IV && root.IV.agentTools) || (typeof require !== "undefined" ? require("./agent-tools.js") : null);
+  const P = (root.IV && root.IV.providers) || (typeof require !== "undefined" ? require("./providers.js") : null);
 
-  const MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions";
-  const MODELS = [
-    ["mistral-large-latest", "Mistral Large (best)"],
-    ["mistral-medium-latest", "Mistral Medium"],
-    ["mistral-small-latest", "Mistral Small (fast, cheap)"],
-  ];
+  const MISTRAL_URL = P.byId("mistral").url;
   const MAX_TURNS = 16;
 
   /** How the skill maps onto this app; sent before the skill text. */
@@ -71,7 +69,7 @@ The skill the analyses follow:
   class AgentError extends Error {}
 
   /**
-   * Request pacing: Mistral's free tier allows about one request per second.
+   * Request pacing: free tiers (e.g. Mistral's) allow about one request per second.
    * A 429 (rate limit) is retried after these delays before giving up.
    */
   const pacing = { minIntervalMs: 1100, retryDelaysMs: [2000, 5000, 10000] };
@@ -87,37 +85,48 @@ The skill the analyses follow:
    * toolChoice: "any" (must call a tool) or "auto". Throws AgentError with a
    * message for the user.
    */
-  async function chat({ apiKey, model, messages, tools = T.TOOL_DEFS, toolChoice = "any", endpoint = MISTRAL_URL, fetchImpl, signal }) {
-    const body = { model, messages, temperature: 0.2 };
-    if (tools) Object.assign(body, { tools, tool_choice: toolChoice, parallel_tool_calls: false });
+  async function chat({ conn, messages, tools = T.TOOL_DEFS, toolChoice = "required", fetchImpl, signal }) {
+    const prov = P.byId(conn.provider);
+    let req;
+    try { req = P.buildRequest(conn, { messages, tools, toolChoice }); } catch (e) { throw new AgentError(e.message); }
+    const name = prov.custom ? P.hostOf(req.url) : prov.label;
     for (let attempt = 0; ; attempt++) {
       await sleep(lastRequestAt + pacing.minIntervalMs - Date.now(), signal);
       lastRequestAt = Date.now();
       let res;
       try {
-        res = await fetchImpl(endpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-          body: JSON.stringify(body),
-          signal,
-        });
+        res = await fetchImpl(req.url, { method: "POST", headers: req.headers, body: JSON.stringify(req.body), signal });
       } catch (e) {
         if (e && e.name === "AbortError") throw e;
-        throw new AgentError("Could not reach api.mistral.ai (offline, or the request was blocked by the browser or a network filter).");
+        throw new AgentError(`Could not reach ${P.hostOf(req.url)} (offline, a wrong address, or the request was blocked by the browser or a network filter — some servers do not accept requests from web pages).`);
       }
-      if (res.ok) return res.json();
+      if (res.ok) {
+        let out;
+        try { out = P.parseResponse(conn, await res.json()); } catch (e) { throw new AgentError(e.message); }
+        if (!out.message) throw new AgentError(`Unexpected answer from ${name} (no message).`);
+        return out;
+      }
       if (res.status === 429 && attempt < pacing.retryDelaysMs.length) {
         await sleep(pacing.retryDelaysMs[attempt], signal);
         continue;
       }
       let detail = "";
-      try { const j = await res.json(); detail = (j && (j.message || (j.error && j.error.message) || j.detail)) || ""; } catch (_) { /* no JSON */ }
-      if (typeof detail !== "string") detail = JSON.stringify(detail);
-      if (res.status === 401) throw new AgentError("Mistral rejected the API key (401). Check it under “API key…”.");
-      if (res.status === 429) throw new AgentError("Mistral rate limit or quota reached (429), also after waiting. Wait a minute or check your plan.");
-      throw new AgentError(`Mistral error ${res.status}${detail ? `: ${detail}` : ""}`);
+      try { detail = P.errorDetail(await res.json()); } catch (_) { /* no JSON */ }
+      if (res.status === 401 || res.status === 403) throw new AgentError(`${name} rejected the API key (${res.status}). Check it under “API key…”.${detail ? ` (${detail})` : ""}`);
+      if (res.status === 429) throw new AgentError(`${name} rate limit or quota reached (429), also after waiting. Wait a minute or check your plan.`);
+      throw new AgentError(`${name} error ${res.status}${detail ? `: ${detail}` : ""}`);
     }
   }
+
+  /** Connection settings from the options of run / converse / summarizeSeries. */
+  function connOf({ provider = "mistral", apiKey, model, endpoint, address }) {
+    const prov = P.byId(provider);
+    if (!apiKey && !prov.optionalKey) throw new AgentError(`No API key set for ${prov.label}.`);
+    return { provider: prov.id, apiKey, model: model || prov.models[0], endpoint, address };
+  }
+
+  /** The assistant message to keep in the history (with Claude's own blocks, if any). */
+  const keepAssistant = (msg, calls) => ({ role: "assistant", content: msg.content || "", ...(calls.length ? { tool_calls: calls } : {}), ...(msg._raw ? { _raw: msg._raw } : {}) });
 
   function parseArgs(raw) {
     if (raw && typeof raw === "object") return raw;
@@ -130,9 +139,9 @@ The skill the analyses follow:
    * Resolves to {final, turns, usage, messages}; final is null if the agent
    * did not submit a result.
    */
-  async function run({ ctx, apiKey, model = MODELS[0][0], skill, request = "", onEvent = () => {}, signal,
-    fetchImpl = (typeof fetch !== "undefined" ? fetch.bind(root) : null), endpoint = MISTRAL_URL, maxTurns = MAX_TURNS }) {
-    if (!apiKey) throw new AgentError("No Mistral API key set.");
+  async function run({ ctx, skill, request = "", onEvent = () => {}, signal,
+    fetchImpl = (typeof fetch !== "undefined" ? fetch.bind(root) : null), maxTurns = MAX_TURNS, ...connection }) {
+    const conn = connOf(connection);
     const messages = [
       { role: "system", content: PREAMBLE + (skill || "") },
       { role: "user", content: userPrompt(ctx, request) },
@@ -141,12 +150,11 @@ The skill the analyses follow:
     let final = null, nudges = 0, turns = 0;
     while (turns < maxTurns && !final) {
       turns++;
-      const resp = await chat({ apiKey, model, messages, endpoint, fetchImpl, signal });
+      const resp = await chat({ conn, messages, fetchImpl, signal });
       addUsage(usage, resp);
-      const msg = resp.choices && resp.choices[0] && resp.choices[0].message;
-      if (!msg) throw new AgentError("Unexpected answer from Mistral (no message).");
+      const msg = resp.message;
       const calls = msg.tool_calls || [];
-      messages.push({ role: "assistant", content: msg.content || "", ...(calls.length ? { tool_calls: calls } : {}) });
+      messages.push(keepAssistant(msg, calls));
       const text = textOf(msg.content);
       if (text) onEvent({ type: "text", text });
       if (!calls.length) {
@@ -189,9 +197,9 @@ The skill the analyses follow:
    * model may use the tools before it answers. Resolves to {reply, final,
    * usage, messages}; final is set if it submitted new regions.
    */
-  async function converse({ ctx, messages = [], text, apiKey, model = MODELS[0][0], skill, onEvent = () => {}, signal,
-    fetchImpl = (typeof fetch !== "undefined" ? fetch.bind(root) : null), endpoint = MISTRAL_URL, maxTurns = 8 }) {
-    if (!apiKey) throw new AgentError("No Mistral API key set.");
+  async function converse({ ctx, messages = [], text, skill, onEvent = () => {}, signal,
+    fetchImpl = (typeof fetch !== "undefined" ? fetch.bind(root) : null), maxTurns = 8, ...connection }) {
+    const conn = connOf(connection);
     const convo = messages.length ? messages : [
       { role: "system", content: CHAT_PREAMBLE + (skill || "") },
       { role: "user", content: `${userPrompt(ctx, "")} The questions follow.` },
@@ -205,13 +213,12 @@ The skill the analyses follow:
     let final = null;
     for (let turn = 0; turn < maxTurns; turn++) {
       // the last turn must answer in text
-      const resp = await chat({ apiKey, model, messages: convo, endpoint, fetchImpl, signal,
+      const resp = await chat({ conn, messages: convo, fetchImpl, signal,
         tools: T.TOOL_DEFS, toolChoice: turn < maxTurns - 1 ? "auto" : "none" });
       addUsage(usage, resp);
-      const msg = resp.choices && resp.choices[0] && resp.choices[0].message;
-      if (!msg) throw new AgentError("Unexpected answer from Mistral (no message).");
+      const msg = resp.message;
       const calls = msg.tool_calls || [];
-      convo.push({ role: "assistant", content: msg.content || "", ...(calls.length ? { tool_calls: calls } : {}) });
+      convo.push(keepAssistant(msg, calls));
       if (!calls.length) return { reply: textOf(msg.content), final, usage, messages: convo };
       final = runTools(ctx, calls, convo, onEvent) || final;
     }
@@ -229,23 +236,21 @@ The skill the analyses follow:
    * Summary of a series from rows of app results ({file, param, status, Te_eV, …}).
    * One request, no tools. Resolves to {text, usage}.
    */
-  async function summarizeSeries({ rows, paramName = "Parameter", settings = "", apiKey, model = MODELS[0][0], skill, request = "", signal,
-    fetchImpl = (typeof fetch !== "undefined" ? fetch.bind(root) : null), endpoint = MISTRAL_URL }) {
-    if (!apiKey) throw new AgentError("No Mistral API key set.");
+  async function summarizeSeries({ rows, paramName = "Parameter", settings = "", skill, request = "", signal,
+    fetchImpl = (typeof fetch !== "undefined" ? fetch.bind(root) : null), ...connection }) {
+    const conn = connOf(connection);
     const messages = [
       { role: "system", content: SERIES_PREAMBLE + (skill || "") },
       { role: "user", content: `Series of ${rows.length} curves; parameter: ${paramName}. Settings: ${settings}.`
         + `${request ? `\nRequest from the user: ${request}` : ""}\n\nResults (JSON, one object per file):\n${JSON.stringify(rows)}` },
     ];
     const usage = { prompt_tokens: 0, completion_tokens: 0 };
-    const resp = await chat({ apiKey, model, messages, tools: null, endpoint, fetchImpl, signal });
+    const resp = await chat({ conn, messages, tools: null, fetchImpl, signal });
     addUsage(usage, resp);
-    const msg = resp.choices && resp.choices[0] && resp.choices[0].message;
-    if (!msg) throw new AgentError("Unexpected answer from Mistral (no message).");
-    return { text: textOf(msg.content), usage };
+    return { text: textOf(resp.message.content), usage };
   }
 
-  const api = { run, converse, summarizeSeries, chat, pacing, MODELS, MISTRAL_URL, PREAMBLE, CHAT_PREAMBLE, SERIES_PREAMBLE, userPrompt, textOf, AgentError };
+  const api = { run, converse, summarizeSeries, chat, pacing, MISTRAL_URL, PREAMBLE, CHAT_PREAMBLE, SERIES_PREAMBLE, userPrompt, textOf, AgentError };
   if (root.IV) root.IV.agent = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

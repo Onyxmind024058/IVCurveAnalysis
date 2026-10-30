@@ -116,7 +116,7 @@ test("agent loop: tools, final result from the app, message format", async () =>
 
 test("agent loop: clear errors for key, quota and network problems", async () => {
   const ctx = context();
-  await assert.rejects(Agent.run({ ctx, apiKey: "", fetchImpl: async () => ({}) }), /No Mistral API key/);
+  await assert.rejects(Agent.run({ ctx, apiKey: "", fetchImpl: async () => ({}) }), /No API key set for Mistral/);
   await assert.rejects(Agent.run({ ctx, apiKey: "k", fetchImpl: fakeMistral([{ status: 401 }], []) }), /rejected the API key/);
   await assert.rejects(Agent.run({ ctx, apiKey: "k", fetchImpl: fakeMistral(Array(4).fill({ status: 429 }), []) }), /rate limit/);
   await assert.rejects(Agent.run({ ctx, apiKey: "k", fetchImpl: async () => { throw new TypeError("Failed to fetch"); } }), /Could not reach api\.mistral\.ai/);

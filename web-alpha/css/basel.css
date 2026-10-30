@@ -609,3 +609,5 @@ pre.agent-skill { white-space: pre-wrap; font-size: 12px; max-height: 60vh; over
 .batch-detail details.ai-report { margin: 4px 0 6px; font-size: 12.5px; }
 .batch-detail details.ai-report summary { cursor: pointer; }
 .batch-detail details.ai-report .agent-report { max-height: 180px; overflow: auto; margin-top: 4px; }
+.agent-provider { min-width: 0; overflow-wrap: anywhere; }
+dialog.win.small label { display: block; font-size: 12.5px; color: var(--text-lo); margin-bottom: 3px; }

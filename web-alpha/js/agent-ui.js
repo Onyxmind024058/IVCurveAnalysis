@@ -1,14 +1,16 @@
 /* =============================================================================
-   "AI analysis α" window (pre-alpha): Mistral key and model, the skill, the
+   "AI analysis α" window (pre-alpha): AI provider, key and model, the skill, the
    agent's steps as they happen, and its result with the actions on it.
    ============================================================================= */
 (function (IV) {
   "use strict";
   const { el, fmtG, fmtE } = IV.ui;
 
-  const KEY = "ivcurve-alpha.mistralKey", MODEL = "ivcurve-alpha.mistralModel";
+  const PROVIDER = "ivcurve-alpha.provider", ADDRESS = "ivcurve-alpha.customAddress";
+  const keyName = (id) => `ivcurve-alpha.key.${id}`, modelName = (id) => `ivcurve-alpha.model.${id}`;
   const SKILL = "ivcurve-alpha.agentSkill", CONSENT = "ivcurve-alpha.agentConsent";
   const BUILTIN_SKILL = IV.AGENT_SKILL.name;
+  const PV = IV.providers;
 
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
@@ -29,54 +31,111 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Small dialogs: API key, consent
+  // Provider settings (kept in this browser; one key and model per provider)
   // ---------------------------------------------------------------------------
 
-  function keyDialog() {
+  const providerId = () => PV.byId(store.get(PROVIDER) || "mistral").id;
+  // keys and models saved by 2.6.0-alpha.1/.2 (Mistral only) still count
+  const keyFor = (id) => store.get(keyName(id)) || (id === "mistral" ? store.get("ivcurve-alpha.mistralKey") : null);
+  const modelFor = (id) => store.get(modelName(id)) || (id === "mistral" ? store.get("ivcurve-alpha.mistralModel") : null) || PV.byId(id).models[0] || "";
+
+  /** Current connection: {provider, apiKey, model, address} plus a label for the user. */
+  function connection() {
+    const id = providerId(), p = PV.byId(id);
+    const conn = { provider: id, apiKey: keyFor(id) || "", model: modelFor(id), address: p.custom ? store.get(ADDRESS) || "" : undefined };
+    const url = p.custom ? PV.customEndpoint(conn.address) : p.url;
+    return { conn, label: `${p.custom ? PV.hostOf(url) || "custom server" : p.label} · ${conn.model || "no model"}`, host: PV.hostOf(url), provider: p };
+  }
+
+  /** What is missing before a request can be sent (null if nothing). */
+  function missing({ conn, provider }) {
+    if (provider.custom && !conn.address) return "the server address";
+    if (!conn.model) return "the model name";
+    if (!conn.apiKey && !provider.optionalKey) return "the API key";
+    return null;
+  }
+
+  function settingsDialog() {
     return new Promise((resolve) => {
-      const d = IV.ui.openDialog({ title: "Mistral API key", small: true, padded: true, onClose: () => resolve() });
-      const input = el("input", { type: "password", placeholder: "Paste your Mistral API key", autocomplete: "off", spellcheck: "false", style: "width:100%" });
-      input.value = store.get(KEY) || "";
+      const d = IV.ui.openDialog({ title: "AI provider", small: true, padded: true, onClose: () => resolve() });
+      let id = providerId();
+      const sel = el("select", { style: "width:100%" }, PV.PROVIDERS.map((p) => el("option", { value: p.id, text: p.label })));
+      const address = el("input", { type: "url", placeholder: "e.g. https://api.cortecs.ai/v1 or https://api.moonshot.ai/v1", spellcheck: "false", style: "width:100%" });
+      const key = el("input", { type: "password", autocomplete: "off", spellcheck: "false", style: "width:100%" });
+      const model = el("input", { type: "text", spellcheck: "false", list: "aiModelList", style: "width:100%" });
+      const models = el("datalist", { id: "aiModelList" });
+      const keyHelp = el("p.muted", { style: "margin:4px 0 0;font-size:12px" });
+      const addressRow = el("div", {}, [el("label", { text: "Server address (OpenAI-compatible)" }), address,
+        el("p.muted", { style: "margin:4px 0 0;font-size:12px", text: "For other providers with an OpenAI-compatible API (cortecs.ai, Kimi/Moonshot, OpenRouter, a local Ollama or LM Studio…). The base address ending in /v1 is enough. The server must accept requests from web pages (CORS)." })]);
+      const fill = () => {
+        const p = PV.byId(id);
+        sel.value = id;
+        addressRow.classList.toggle("hidden", !p.custom);
+        address.value = store.get(ADDRESS) || "";
+        key.value = keyFor(id) || "";
+        key.placeholder = p.optionalKey ? "API key (leave empty if the server needs none)" : `Your ${p.label} API key`;
+        model.value = modelFor(id);
+        model.placeholder = p.custom ? "Model name as the server expects it, e.g. kimi-k2" : "";
+        models.replaceChildren(...p.models.map((m) => el("option", { value: m })));
+        keyHelp.innerHTML = p.keyUrl
+          ? `Create a key at <a href="${p.keyUrl}" target="_blank" rel="noopener">${IV.escape(PV.hostOf(p.keyUrl))}</a>. Stored only in this browser and sent only to ${IV.escape(PV.hostOf(p.url))}; the provider bills the requests to your account.`
+          : "Stored only in this browser and sent only to the address above.";
+      };
+      sel.addEventListener("change", () => { id = sel.value; fill(); });
       d.body.append(
-        el("p", { style: "margin:0 0 8px", html: `The agent uses <b>your own</b> Mistral API key. Create one at
-          <a href="https://console.mistral.ai/api-keys" target="_blank" rel="noopener">console.mistral.ai → API keys</a>.` }),
-        input,
-        el("p.muted", { style: "margin:8px 0 0;font-size:12px", text: "Stored only in this browser on this computer and sent only to api.mistral.ai. Mistral bills the requests to your account." }),
+        el("div", { style: "display:flex;flex-direction:column;gap:10px" }, [
+          el("div", {}, [el("label", { text: "Provider" }), sel]),
+          addressRow,
+          el("div", {}, [el("label", { text: "API key" }), key, keyHelp]),
+          el("div", {}, [el("label", { text: "Model" }), model, models,
+            el("p.muted", { style: "margin:4px 0 0;font-size:12px", text: "Pick a suggestion or type any model name the provider offers. The model must support tool (function) calling." })]),
+        ]),
       );
-      const save = () => { store.set(KEY, input.value.trim() || null); d.close(); };
-      input.addEventListener("keydown", (e) => { if (e.key === "Enter") save(); });
+      const save = () => {
+        store.set(PROVIDER, id);
+        if (PV.byId(id).custom) store.set(ADDRESS, address.value.trim() || null);
+        store.set(keyName(id), key.value.trim() || null);
+        store.set(modelName(id), model.value.trim() || null);
+        d.close();
+      };
       d.foot.append(
-        el("button.btn", { text: "Forget key", onclick: () => { store.set(KEY, null); d.close(); } }),
+        el("button.btn", { text: "Forget key", onclick: () => { store.set(keyName(id), null); if (id === "mistral") store.set("ivcurve-alpha.mistralKey", null); key.value = ""; } }),
         el("span.spacer"),
         el("button.btn", { text: "Cancel", onclick: () => d.close() }),
         el("button.btn.primary", { text: "Save", onclick: save }),
       );
-      input.focus();
+      fill();
     });
   }
 
-  async function confirmSending() {
-    if (store.get(CONSENT) === "yes") return true;
-    const choice = await IV.ui.message("Send this curve to Mistral?",
+  async function confirmSending(host, label) {
+    const k = `${CONSENT}.${host}`;
+    if (store.get(k) === "yes" || (host === "api.mistral.ai" && store.get(CONSENT) === "yes")) return true;
+    const choice = await IV.ui.message(`Send this curve to ${label}?`,
       `<p style="margin:0 0 8px">Everywhere else this app keeps your data on your computer. The AI analysis is the exception:
-       to work, it sends to <b>api.mistral.ai</b> the mean I–V curve (as tables of numbers produced by the app's tools),
+       to work, it sends to <b>${IV.escape(host)}</b> the mean I–V curve (as tables of numbers produced by the app's tools),
        the file name and the probe/gas settings, together with the skill text.</p>
-       <p style="margin:0" class="muted">Mistral processes the requests under the terms of your Mistral account. This is asked once per browser.</p>`,
+       <p style="margin:0" class="muted">The provider processes the requests under the terms of your account with it. This is asked once per provider and browser.</p>`,
       [{ label: "Cancel" }, { label: "Send and analyse", value: "yes", primary: true }]);
     if (choice !== "yes") return false;
-    store.set(CONSENT, "yes");
+    store.set(k, "yes");
     return true;
   }
 
-  const currentModel = () => store.get(MODEL) || IV.agent.MODELS[0][0];
-
-  /** Key (asks for it if missing), consent and skill; null if the user cancels. Shared by the window, the chat and the batch review. */
+  /**
+   * Connection (asks for missing settings), consent and skill; null if the user
+   * cancels. Shared by the window, the chat and the batch review.
+   * Resolves to {conn, label, skill}.
+   */
   async function prepare() {
-    if (!store.get(KEY)) { await keyDialog(); if (!store.get(KEY)) return null; }
-    if (!(await confirmSending())) return null;
+    let c = connection();
+    if (missing(c)) { await settingsDialog(); c = connection(); }
+    const gap = missing(c);
+    if (gap) { IV.ui.toast(`AI provider: ${gap} is missing.`, "error"); return null; }
+    if (!(await confirmSending(c.host, c.provider.custom ? c.host : c.provider.label))) return null;
     try {
       const skill = await skillText();
-      return { apiKey: store.get(KEY), model: currentModel(), skill };
+      return { conn: c.conn, label: c.label, skill };
     } catch (e) {
       IV.ui.message("Skill", IV.escape(e.message));
       return null;
@@ -126,19 +185,21 @@
     if (ui) return;
     let curve;
     try { curve = IV.app.agentCurve(); } catch (e) { IV.ui.message("No data", IV.escape(e.message)); return; }
-    const d = IV.ui.openDialog({ title: "AI analysis α — Mistral agent (pre-alpha)", onClose: () => { if (ui && ui.abort) ui.abort.abort(); ui = null; } });
+    const d = IV.ui.openDialog({ title: "AI analysis α — AI agent (pre-alpha)", onClose: () => { if (ui && ui.abort) ui.abort.abort(); ui = null; } });
     d.dlg.classList.add("agent");
     ui = { d, abort: null, last: null, ctx: null, messages: [] };
 
     // --- side: settings and run --------------------------------------------
-    const keyLine = el("span");
+    const keyLine = el("div.agent-provider");
     const paintKey = () => {
-      const k = store.get(KEY);
-      keyLine.replaceChildren(k ? el("span", { text: `set (…${k.slice(-4)})` }) : el("span.warn-text", { text: "not set" }));
+      const c = connection(), gap = missing(c), k = c.conn.apiKey;
+      keyLine.replaceChildren(
+        el("div", { text: c.label }),
+        el("div.muted", { style: "font-size:12px" }, [
+          gap ? el("span.warn-text", { text: `${gap} not set` }) : k ? `key set (…${k.slice(-4)})` : "no key (none needed)",
+          ` · ${c.host || "no address"}`]),
+      );
     };
-    const modelSel = el("select", {}, IV.agent.MODELS.map(([id, label]) => el("option", { value: id, text: label })));
-    modelSel.value = currentModel();
-    modelSel.addEventListener("change", () => store.set(MODEL, modelSel.value));
 
     const skillLine = el("span");
     const paintSkill = () => { const c = customSkill(); skillLine.textContent = c ? c.name : BUILTIN_SKILL; };
@@ -166,10 +227,9 @@
     const side = el("div.agent-side", {}, [
       el("h3", { text: "Curve" }),
       el("p.muted", { style: "margin:0", text: `${curve.file || "loaded data"} · ${IV.app.settingsSummary()}` }),
-      el("h3", { text: "Mistral" }),
-      el("div.agent-row", {}, [el("span", { text: "API key: " }), keyLine, el("span.spacer"),
-        el("button.btn.small", { text: "API key…", onclick: async () => { await keyDialog(); paintKey(); } })]),
-      el("div.field", {}, [el("label", { text: "Model" }), modelSel]),
+      el("h3", { text: "AI provider" }),
+      el("div.agent-row", {}, [keyLine, el("span.spacer"),
+        el("button.btn.small", { text: "Provider & key…", onclick: async () => { await settingsDialog(); paintKey(); } })]),
       el("h3", { text: "Skill" }),
       el("div.agent-row", {}, [skillLine]),
       el("div.agent-row", {}, [
@@ -233,18 +293,18 @@
       stepsBox.open = true;
       ui.abort = new AbortController();
       const started = Date.now();
-      addStep("info", `Model ${modelSel.value} · skill ${skill.name}`);
+      addStep("info", `${ready.label} · skill ${skill.name}`);
       try {
         const ctx = IV.agentTools.makeContext(curve);
         // a new analysis starts a new conversation for the chat
         ui.ctx = ctx; ui.messages = [];
         resetChatLog("The chat continues from this analysis.");
         const out = await IV.agent.run({
-          ctx, apiKey: ready.apiKey, model: modelSel.value, skill: skill.text, request: request.value.trim(),
+          ctx, ...ready.conn, skill: skill.text, request: request.value.trim(),
           onEvent, signal: ui.abort.signal,
         });
         if (ui) ui.messages = out.messages;
-        const meta = `${out.turns} steps · ${Math.round((Date.now() - started) / 1000)} s · ${out.usage.prompt_tokens + out.usage.completion_tokens} tokens · ${modelSel.value}`;
+        const meta = `${out.turns} steps · ${Math.round((Date.now() - started) / 1000)} s · ${out.usage.prompt_tokens + out.usage.completion_tokens} tokens · ${ready.label}`;
         if (out.final) showResult(out.final, meta, skill.name);
         else resultBox.replaceChildren(el("div.empty-state", { text: "The agent did not submit a result. Run it again, or try another model." }));
       } catch (e) {
@@ -284,7 +344,7 @@
       ui.abort = new AbortController();
       try {
         const out = await IV.agent.converse({
-          ctx: ui.ctx, messages: ui.messages, text, apiKey: ready.apiKey, model: modelSel.value, skill: ready.skill.text,
+          ctx: ui.ctx, messages: ui.messages, text, ...ready.conn, skill: ready.skill.text,
           signal: ui.abort.signal,
           onEvent: (ev) => { if (ev.type === "tool") chatLog.insertBefore(el("div.chat-msg.tool", { text: `→ ${describeCall(ev.name, ev.args)}` }), waiting); },
         });
@@ -293,7 +353,7 @@
         ui.messages = out.messages;
         chatLine("ai", out.reply || "(no answer)");
         if (out.final) {
-          showResult(out.final, `updated from the chat · ${modelSel.value}`, ready.skill.name);
+          showResult(out.final, `updated from the chat · ${ready.label}`, ready.skill.name);
           chatLine("tool", "The result above was updated with the new regions.");
         }
       } catch (e) {
@@ -351,5 +411,5 @@
   }
 
   IV.openAgent = openAgent;
-  IV.agentUI = { prepare, currentModel, describeCall, describeResult };
+  IV.agentUI = { prepare, connection, describeCall, describeResult };
 })(window.IV = window.IV || {});

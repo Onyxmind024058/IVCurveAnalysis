@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.6.0-alpha.2";
+  const APP_VERSION = "2.6.0-alpha.3";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -653,6 +653,16 @@
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
     {
+      version: "2.6.0-alpha.3",
+      title: "Choose the AI provider",
+      items: [
+        "AI analysis, chat and batch pre-review now work with Mistral, ChatGPT (OpenAI), Claude (Anthropic), Gemini (Google) or Groq, or with any other OpenAI-compatible server (cortecs.ai, Kimi/Moonshot, OpenRouter, a local Ollama or LM Studio…) by entering its address.",
+        "“Provider & key…” in the AI window: one API key and model per provider, all stored only in this browser. Model names can be picked from suggestions or typed; the model must support tool calling.",
+        "Before the first request to a provider, the app asks once whether the curve may be sent there.",
+        "Keys and the model saved for Mistral in the earlier pre-alpha are kept.",
+      ],
+    },
+    {
       version: "2.6.0-alpha.2",
       title: "AI batch pre-review and chat",
       items: [
@@ -970,7 +980,7 @@
     useAgentResult(r) {
       addDerived(r, probeArea());
       setOmlResults(r);
-      manualCard(r, "AI analysis (Mistral) — not reviewed");
+      manualCard(r, "AI analysis — not reviewed");
       status("AI analysis results received");
     },
   };

@@ -201,7 +201,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // AI pre-review (pre-alpha): the Mistral agent analyses each curve
+  // AI pre-review (pre-alpha): the AI agent analyses each curve
   // ---------------------------------------------------------------------------
 
   /** The agent's result becomes the curve's proposal (and its result until a person reviews it). */
@@ -229,7 +229,7 @@
     if (!ready) return;
     const flagged = todo.filter((it) => it.status !== "good");
     const choice = await IV.ui.message("AI pre-review of the batch",
-      `<p style="margin:0 0 8px">The Mistral agent (<b>${IV.escape(ready.model)}</b>, skill ${IV.escape(ready.skill.name)}) analyses the curves one after the other,
+      `<p style="margin:0 0 8px">The AI agent (<b>${IV.escape(ready.label)}</b>, skill ${IV.escape(ready.skill.name)}) analyses the curves one after the other,
        like the single-curve AI analysis. Its regions become each curve's proposal: <b>Review next</b> then opens the curves with the AI's regions,
        and nothing counts as reviewed until a person accepts it.</p>
        <p style="margin:0 0 8px">About 5–10 requests per curve; at most one request per second. At the end the agent writes a short summary of the series.</p>
@@ -251,10 +251,10 @@
         progress(`AI: ${done + failed + 1} / ${list.length} — ${item.name}`);
         select(batch.items.indexOf(item));
         let curve;
-        try { curve = IV.app.curveFor(item.scans); } catch (e) { item.ai = { status: "error", report: e.message, model: ready.model }; failed++; continue; }
+        try { curve = IV.app.curveFor(item.scans); } catch (e) { item.ai = { status: "error", report: e.message, model: ready.label }; failed++; continue; }
         const ctx = IV.agentTools.makeContext(IV.app.agentInput(curve, item.name));
-        const out = await IV.agent.run({ ctx, apiKey: ready.apiKey, model: ready.model, skill: ready.skill.text, signal: abort.signal });
-        if (out.final) { applyAI(item, out.final, ready.model, area); done++; } else { item.ai = { status: "no result", report: "The agent did not submit a result.", model: ready.model }; failed++; }
+        const out = await IV.agent.run({ ctx, ...ready.conn, skill: ready.skill.text, signal: abort.signal });
+        if (out.final) { applyAI(item, out.final, ready.label, area); done++; } else { item.ai = { status: "no result", report: "The agent did not submit a result.", model: ready.label }; failed++; }
         render();
       }
     } catch (e) {
@@ -297,9 +297,9 @@
     try {
       const out = await IV.agent.summarizeSeries({
         rows: summaryRows(), paramName: batch.paramName, settings: IV.app.settingsSummary(),
-        apiKey: ready.apiKey, model: ready.model, skill: ready.skill.text,
+        ...ready.conn, skill: ready.skill.text,
       });
-      batch.aiSummary = { text: out.text, model: ready.model, at: new Date().toISOString() };
+      batch.aiSummary = { text: out.text, model: ready.label, at: new Date().toISOString() };
       render();
       showSummary();
     } catch (e) {
@@ -445,9 +445,9 @@
     const btn = (text, onclick, cls = "") => el(`button.btn${cls}`, { text, onclick });
     const reviewBtn = btn("Review next ▶", () => reviewNext(batch.selected), ".primary");
     const aiBtn = btn("AI pre-review α…", aiPreReview, ".ai");
-    aiBtn.title = "The Mistral agent analyses every curve not yet reviewed; its regions become the proposals you review";
+    aiBtn.title = "The AI agent analyses every curve not yet reviewed; its regions become the proposals you review";
     const aiSumBtn = btn("AI summary α", () => (batch.aiSummary ? showSummary() : aiSummary()), ".ai");
-    aiSumBtn.title = "Summary of the series written by the Mistral agent from the table of results";
+    aiSumBtn.title = "Summary of the series written by the AI agent from the table of results";
     const controls = el("div.controls", { style: "border-top:none;border-bottom:1px solid var(--border)" }, [
       btn("Add files…", () => fileInput.click()), fileInput,
       reviewBtn,

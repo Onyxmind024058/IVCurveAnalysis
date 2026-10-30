@@ -4,7 +4,7 @@
 
 🧪 Beta for **collecting training data for machine learning**: [onyxmind024058.github.io/IVCurveAnalysis/web-beta/](https://onyxmind024058.github.io/IVCurveAnalysis/web-beta/), see [Beta: machine learning](#beta-machine-learning). 
 
-🤖 Pre-alpha for **AI analysis with a Mistral agent**: [onyxmind024058.github.io/IVCurveAnalysis/web-alpha/](https://onyxmind024058.github.io/IVCurveAnalysis/web-alpha/), see [Pre-alpha: AI analysis](#pre-alpha-ai-analysis). Needs your own Mistral API key; not for results.
+🤖 Pre-alpha for **AI analysis with an AI agent** (Mistral, ChatGPT, Claude, Gemini, Groq or any OpenAI-compatible server): [onyxmind024058.github.io/IVCurveAnalysis/web-alpha/](https://onyxmind024058.github.io/IVCurveAnalysis/web-alpha/), see [Pre-alpha: AI analysis](#pre-alpha-ai-analysis). Needs your own API key; not for results.
 
 A browser application for loading Langmuir probe measurements (`.lda` or CSV files), plotting individual and averaged I–V curves, and extracting plasma parameters using automatic OML-style analysis, manual OML analysis, EEDF/EEPF calculation, and an EPFL two-fluid model.
 
@@ -103,15 +103,15 @@ node web-beta/ml/train.js data/*.ivtrain --out /tmp/try    # inspect first witho
 
 ## Pre-alpha: AI analysis
 
-`web-alpha/` is the beta plus **AI analysis α**: a Mistral model analyses the loaded curve like a person in the manual OML window.
+`web-alpha/` is the beta plus **AI analysis α**: a language model analyses the loaded curve like a person in the manual OML window.
 
 - **Skill.** The agent follows `skills/langmuir-probe-analysis/SKILL.md` (built into the app as `web-alpha/js/agent-skill.js` by `node web-alpha/tools/sync-skill.js`; a test checks they match): the OML procedure, the Vp check in volts (≤ 2 V good; 2–5 V ok only if Te from Vp − Vf confirms the fitted Te; > 5 V review by eye), the Te cross-check, the quality flags and how to report. Another skill file (.md) can be loaded in the window; it is kept in that browser. The same folder has the Python pipeline the skill describes, for use outside the app.
 - **Tools, not guesses.** The model cannot compute anything itself. It calls the app's own analysis through five tools (`web-alpha/js/agent-tools.js`): curve overview, the rule-based proposal, evaluation of chosen regions (both Vp, Vp check, Te, Te from Vp − Vf, ne, nᵢ, R², quality flags), a look at ln(Ie) in a window, and submit. Every number shown comes from the app; the agent's report is shown separately.
 - **Review.** *Open in manual OML to check…* starts the manual window from the agent's regions; accepting there counts as a review (and adds the curve to the training data). *Show in main window* adds the result marked "not reviewed".
-- **Key and privacy.** Each user enters their own Mistral API key (*API key…*); it is stored only in that browser and sent only to `api.mistral.ai`. When an analysis is started, the mean curve (as numbers returned by the tools), the file name, the probe/gas settings and the skill are sent to Mistral; the app asks once before the first analysis.
+- **Provider, key and privacy.** *Provider & key…* chooses **Mistral, ChatGPT (OpenAI), Claude (Anthropic), Gemini (Google) or Groq**, or **any other OpenAI-compatible server** by its address (cortecs.ai, Kimi/Moonshot, OpenRouter, a local Ollama or LM Studio…; the server must accept requests from web pages). Each user enters their own API key; one key and model per provider, stored only in that browser and sent only to that provider. When an analysis is started, the mean curve (as numbers returned by the tools), the file name, the probe/gas settings and the skill are sent to the provider; the app asks once per provider before the first request. Claude is called through its own Messages API (`web-alpha/js/providers.js`); the others through the OpenAI-compatible chat API. The model must support tool (function) calling.
 - **Chat (single curve).** Below the result, ask questions about the loaded curve ("Why is the Vp check only ok?", "Try a transition from −1 to 6 V"). The assistant checks with the same tools before answering and continues from the analysis just run; if you ask it to keep other regions, the result is updated.
 - **Batch: AI pre-review α.** In the batch review, the agent analyses every curve not reviewed yet (or only the ⚠/✗ ones). Its regions become the proposals (tagged **AI** in the table; its report is under the curve), so *Review next* opens each curve with the AI's regions. Nothing counts as reviewed until a person accepts it. **AI summary α** then summarises the series from the table of app results (what still needs review, trends against the parameter, outliers). Saved batches keep the AI proposals, reports and summary.
-- Models: Mistral Large (default), Medium, Small. One curve takes about 5–10 requests. Requests are spaced to at most one per second and a rate-limit answer (429) is retried, so Mistral's free tier also works for batches (slowly).
+- Model names can be picked from suggestions or typed. One curve takes about 5–10 requests. Requests are spaced to at most one per second and a rate-limit answer (429) is retried, so Mistral's free tier also works for batches (slowly).
 
 ## Checking the physics (automatic tests)
 
