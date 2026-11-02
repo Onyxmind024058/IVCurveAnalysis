@@ -728,7 +728,7 @@
     }
     const st = STATUS[it.status] || STATUS.pending;
     const flags = it.flags || [];
-    ui.detail.replaceChildren(
+    ui.detail.replaceChildren(...[
       el("p", {}, [el(`span.status.${it.status}`, { text: st.text }), " ", st.title,
         it.proposalSource ? el("span.muted", { text: ` · proposal from the ${it.proposalSource}` }) : null]),
       flags.length ? el("ul", {}, flags.map((f) => el("li", { text: f }))) : el("p.muted", { text: "No warnings." }),
@@ -738,7 +738,7 @@
       it.ai ? el("details.ai-report", {}, [el("summary", { text: `AI report (${it.ai.model})` }), el("div.agent-report", { text: it.ai.report || "(none)" })]) : null,
       el("button.btn.small.ai", { text: it.ai ? "Chat with the AI about this curve…" : "AI analysis / chat for this curve…", onclick: () => openAIFor(batch.selected) }),
       el("p.muted", { text: "Shaded on the plot: transition (left) and saturation (right) fit regions." }),
-    );
+    ].filter(Boolean));
   }
 
   IV.openBatch = openBatch;

@@ -586,5 +586,9 @@
     "Import to training data": ["In die Trainingsdaten importieren", "Importer dans les données d'entraînement", "导入到训练数据"],
     "{0} of 200 curves collected.": ["{0} von 200 Kurven gesammelt.", "{0} courbes collectées sur 200.", "已收集 200 条中的 {0} 条曲线。"],
     "200 curves": ["200 Kurven", "200 courbes", "200 条曲线"],
+    "2nd-derivative smoothing:": ["Glättung der 2. Ableitung:", "Lissage de la dérivée seconde :", "二阶导数平滑："],
+    "· skill {0}": ["· Skill {0}", "· compétence {0}", "· 技能 {0}"],
+    "AI: {0}": ["KI: {0}", "IA : {0}", "AI：{0}"],
+    "all": ["alle", "toutes", "全部"],
   };
 })(window.IV = window.IV || {});

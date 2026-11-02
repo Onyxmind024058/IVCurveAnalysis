@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.6.0-alpha.7";
+  const APP_VERSION = "2.6.0-alpha.8";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -652,6 +652,15 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.6.0-alpha.8",
+      title: "German, French and Simplified Chinese",
+      items: [
+        "The interface is available in English, German (Deutsch), French (Français) and Simplified Chinese (简体中文): language selector next to the Light/Dark switch. The first time it follows the browser's language; the choice is remembered.",
+        "Everything is translated as it appears, including the batch review, the AI windows, messages and the graphs (titles, axes, legends). Numbers, file names and units stay as they are; this list of changes stays in English.",
+        "The AI writes its reports, chat answers and the series summary in the chosen language.",
+      ],
+    },
     {
       version: "2.6.0-alpha.7",
       title: "Batch view and AI verdict",
