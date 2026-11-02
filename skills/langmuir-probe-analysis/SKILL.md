@@ -30,7 +30,7 @@ Analyse Langmuir probe traces with the pipeline in `langmuir_pipeline.py` (this 
   - temperatures: `Te_single_eV`, `two_T` {Tc_eV, Th_eV, nh_over_ne, ne_m3, chi2_dof}, `Te_VpVf_OML_eV`, `Te_VpVf_planar_eV`, `Te_check_ok`, `dVf_consistent`;
   - densities: `ne_m3`, `ne_edf_m3`, `ni_OML_m3`, `ni_over_ne`;
   - currents: `I_ion_at_Vf_A` (Iis), `I_is_at_Vmin_A`;
-  - fit quality: `r2_transition`, `r2_ion`, `n_saturation_points`, `quality_flags` (list of reasons), `status` (`good` if no flag, else `check`);
+  - fit quality: `r2_transition`, `r2_ion`, `n_saturation_points`, `quality_flags` (list of reasons), `severe_problems`, `status` (`good` / `check` / `bad`, see Reporting → Verdict);
   - RF compensation: `rf_knee_rounding_over_Te`, `rf_compensation` (`good` / `doubtful` / `poor` / `not_checked`), `VpVf_over_expected_OML`;
   - EEDF: `EEDF_reliable_to_eV`, `Te_eff_EEDF_eV`; and `lambda_D_um`.
 - **`--plots DIR`**: one 3-panel PNG per trace: (1) I–V with ion model, Vf, Vp; (2) semilog Ie with 1-T and 2-T fit curves (χ² in legend — this is where the bi-Maxwellian slope break shows); (3) EEDF with 1-T/2-T Maxwellian overlays, noise floor, and reliable-energy limit. Files are named `<basename>_z<zpos>.png` (XML) or `<basename>.png` (CSV); the path is also returned in the JSON as `plot`.
@@ -94,10 +94,15 @@ Analyse Langmuir probe traces with the pipeline in `langmuir_pipeline.py` (this 
 ## Reporting
 
 - Report: the RF compensation verdict (step 14), Vf, Vp (both values, ΔVp and the Vp check level with its reason), Tc/Th with fractions (or single Te if 1-T wins), Te from Vp − Vf (OML and planar) and whether it confirms the fit, ne with ~30% systematic uncertainty, ni (OML) and ni/ne, lambda_D, Iis at Vf, plus the caveats above.
+- **Verdict** — every analysed trace gets one, and it goes first:
+  - **good**: no quality flag; the results are usable as they are.
+  - **check**: usable with the stated caveats (minor flags: ni/ne far from 1, a short or slightly curved transition with R² 0.98–0.995, few saturation points, doubtful RF compensation, a doubtful curve analysed with margin).
+  - **bad**: the results are **not trustworthy as they are** — any of: Vp check `review` (ΔVp > 5 V, or 2–5 V without Te confirmation), RF compensation `poor`, Te inconsistent with Te from Vp − Vf (> 30 %), a transition that is not exponential (R² < 0.98), Vp at the end of the sweep (no saturation measured), Te outside 0.2–30 eV. Say what would fix it (re-analysis by hand with other regions, or a new measurement). The numbers may be given only as provisional, clearly marked, and a bad trace is left out of every trend. You may judge a trace **bad** for other reasons you see (e.g. two populations the single-Maxwellian fit cannot describe); you may never call a trace with one of the listed problems good or check.
+  - **not analysable** (step 0) is separate: no results at all.
 - **Status first**: start each trace with `not analysable` (reasons only, no results; step 0), `good` or `check`, listing every quality flag, and the RF compensation verdict when it is not `good` (step 14). A trace with `Vp_check = review` (ΔVp > 5 V, or 2–5 V without Te confirmation) must be presented as **"needs review by eye"**: give the numbers only as provisional and never as final results; suggest which region to adjust (usually the saturation window or the transition window).
 - Cross-checks to state: predicted vs measured Vp−Vf, ne(fit) vs ne(EEDF), ni(OML) vs ne.
 - Always produce the plots (`--plots`) and reference them; for inline visuals in chat, load `rich-ui` and render from the `--npz` arrays: I–V curve, semilog Ie with fits (shows the two-slope structure), EEDF with Maxwellian overlay — the same three panels as the PNG. Subsample long series for charts and keep the full data in files.
-- For a batch, run the script over all files, then build one comparison table (per-file: status, Vf, Vp, ΔVp, Vp check, Tc, Th, ne, ni/ne) — trends across power/pressure/position are usually what the user wants. Mark traces that need review in the table and leave them out of trend statements until reviewed. List not-analysable traces separately with their reasons (no numbers).
+- For a batch, run the script over all files, then build one comparison table (per-file: verdict, Vf, Vp, ΔVp, Vp check, Tc, Th, ne, ni/ne) — trends across power/pressure/position are usually what the user wants. Mark traces that need review in the table and leave them out of trend statements until reviewed; leave **bad** traces out of every trend. List not-analysable traces separately with their reasons (no numbers).
 
 ## Assumptions/limits
 

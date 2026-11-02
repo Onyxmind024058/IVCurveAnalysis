@@ -54,7 +54,7 @@ test("evaluate_regions applies the Vp rule in volts", () => {
   const bad = T.call(ctx, "evaluate_regions", { ion_vmin: -59, ion_vmax: -20, trans_min: -2, trans_max: 7, sat_min: 4, sat_max: 9 }).content;
   assert.equal(bad.Vp_check, "review");
   assert.ok(bad.Vp_difference_V > 5);
-  assert.equal(bad.status, "check");
+  assert.equal(bad.status, "bad", "a Vp check that says review makes the curve bad");
 });
 
 test("tool errors come back as messages, not exceptions", () => {
@@ -208,7 +208,7 @@ test("RF compensation: a rounded knee (RF ripple ≈ Te) is reported, a sharp on
   assert.equal(rf.rf_check.rf_compensation, "poor");
   assert.ok(rf.rf_check.knee_rounding_over_Te > clean.rf_check.knee_rounding_over_Te + 0.5);
   assert.ok(rf.quality_flags.some((f) => /RF compensation looks poor/.test(f)));
-  assert.equal(rf.status, "check");
+  assert.equal(rf.status, "bad", "poor RF compensation makes the curve bad");
 });
 
 test("analysability: clear failures are 'likely not analysable', borderline curves 'doubtful — try'", () => {
@@ -236,4 +236,17 @@ test("submit_not_analysable ends the run without results", async () => {
   assert.equal(out.final.reason, "pure noise");
   assert.equal(out.final.results, null);
   assert.ok(out.final.summary.analysability.verdict);
+});
+
+test("verdict: the stricter of the app's checks and the agent's own verdict", () => {
+  const ctx = context();
+  const good = { ion_vmin: -59, ion_vmax: -20, trans_min: -2, trans_max: 7, sat_min: 13, sat_max: 19 };
+  const submit = (reg, verdict, why) => T.call(ctx, "submit_result", { ...reg, verdict, verdict_reason: why, report: "r" }).final;
+  assert.equal(submit(good, "good").verdict, "good");
+  const own = submit(good, "bad", "two populations visible");
+  assert.equal(own.verdict, "bad", "the agent may be stricter");
+  assert.deepEqual(own.verdict_reasons, ["two populations visible"]);
+  const across = submit({ ...good, trans_min: 2, trans_max: 16, sat_min: 17, sat_max: 20 }, "good", "looks fine");
+  assert.equal(across.verdict, "bad", "but never milder than the app's checks");
+  assert.ok(across.verdict_reasons.some((x) => /transition not exponential/.test(x)));
 });

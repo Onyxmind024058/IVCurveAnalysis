@@ -27,6 +27,7 @@ How you work here:
 - First check whether the curve is analysable (the skill's step 0; "analysability" in get_curve_overview). If it is clearly not analysable even after trying, finish with submit_not_analysable instead of submit_result and give no results. Keep a margin: when in doubt, analyse and flag instead of rejecting.
 - Steps: (1) get_curve_overview; (2) propose_regions; (3) if the status is "check", try to fix the flags with evaluate_regions and inspect_window — move the transition window to the straight part of ln(Ie) between Vf and the knee, the saturation window above the knee, the ion region a few Te below Vf — at most about 8 evaluations; (4) submit_result with the best regions and your report. Always finish with submit_result.
 - Check the RF compensation as the skill says and report it in the status when it is doubtful or poor. In the tool results it is rf_check (rf_check.knee_rounding_over_Te is the skill's rf_knee_rounding_over_Te, rf_check.rf_compensation its rf_compensation) and VpVf_over_expected_OML.
+- In submit_result give your verdict on the curve: "good" (results usable), "check" (usable with the stated caveats) or "bad" (results not trustworthy as they are: needs re-analysis by hand or a new measurement), with a one-sentence reason. The app's checks report severe_problems; with any of them the verdict is "bad" whatever you say.
 - Do not hide a problem to get status "good": if the Vp check stays "review" (more than 5 V, or 2–5 V without Te confirmation), submit anyway and say clearly that the curve needs review by eye.
 - Not available in the app: two-temperature fits, the Druyvesteyn EEDF, plots and npz files. Do not quote Tc, Th or EEDF numbers. You may mention signs of a second electron population seen with inspect_window (a clear change of slope of ln(Ie) between Vf and the knee) as something to check in the app's EEPF window.
 - The report is plain text for a physicist: status first (good / check, with every flag), then the results with units, the cross-checks, the caveats, and which regions you chose and why (in one or two sentences). Be concise. Write in English unless the user's request is in another language.
@@ -35,10 +36,14 @@ The skill follows.
 --- SKILL ---
 `;
 
+  /** Language of the app's interface (the AI writes for the user in it). */
+  const uiLanguage = () => (root.IV && root.IV.i18n && root.IV.i18n.languageName()) || "English";
+  const languageLine = () => (uiLanguage() === "English" ? "" : `\nWrite everything meant for the user (report, verdict reason, chat answers) in ${uiLanguage()}; keep the symbols (Te, Vp, Vf, ne, ni, ΔVp) and units as they are.`);
+
   function userPrompt(ctx, request) {
     const probe = ctx.probe ? `${ctx.probe.diameter_mm} mm × ${ctx.probe.length_mm} mm cylindrical probe` : "cylindrical probe";
     return `Analyse the mean I–V curve of "${ctx.file || "the loaded file"}" (${probe}, ${ctx.species}, ${ctx.massAmu} amu, x axis ${ctx.xkey}).`
-      + (request ? `\nRequest from the user: ${request}` : "");
+      + (request ? `\nRequest from the user: ${request}` : "") + languageLine();
   }
 
   /** Follow-up questions about one curve (chat). */
@@ -247,7 +252,7 @@ The skill the analyses follow:
     const conn = connOf(connection);
     const messages = [
       { role: "system", content: SERIES_PREAMBLE + (skill || "") },
-      { role: "user", content: `Series of ${rows.length} curves; parameter: ${paramName}. Settings: ${settings}.`
+      { role: "user", content: `Series of ${rows.length} curves; parameter: ${paramName}. Settings: ${settings}.${languageLine()}`
         + `${request ? `\nRequest from the user: ${request}` : ""}\n\nResults (JSON, one object per file):\n${JSON.stringify(rows)}` },
     ];
     const usage = { prompt_tokens: 0, completion_tokens: 0 };

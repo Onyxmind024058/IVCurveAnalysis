@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.6.0-alpha.6";
+  const APP_VERSION = "2.6.0-alpha.8";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -653,6 +653,25 @@
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
     {
+      version: "2.6.0-alpha.8",
+      title: "German, French and Simplified Chinese",
+      items: [
+        "The interface is available in English, German (Deutsch), French (Français) and Simplified Chinese (简体中文): language selector next to the Light/Dark switch. The first time it follows the browser's language; the choice is remembered.",
+        "Everything is translated as it appears, including the batch review, the AI windows, messages and the graphs (titles, axes, legends). Numbers, file names and units stay as they are; this list of changes stays in English.",
+        "The AI writes its reports, chat answers and the series summary in the chosen language.",
+      ],
+    },
+    {
+      version: "2.6.0-alpha.7",
+      title: "Batch view and AI verdict",
+      items: [
+        "Batch review: “Show: Parameter graph · Report · Curve” hides or shows each section on the right independently; the others take the space (all off: the table uses the full width). Remembered in this browser.",
+        "AI verdict per curve: “✓ AI pre-reviewed” (good), “⚠ AI: check” (usable with caveats) or “✗ AI: bad curve” (results not trustworthy: Vp check says review, poor RF compensation, Te inconsistent with Vp − Vf, transition not exponential, Vp at the end of the sweep, Te out of range). The app's checks can only make the AI's verdict stricter.",
+        "Bad curves are shown as red crosses in the parameter graph, left out of the trend line and the AI summary; the reasons appear in the report section and the AI window.",
+        "A doubtful RF compensation is now a minor flag (⚠ check). The skill and its Python pipeline use the same verdict (status good / check / bad).",
+      ],
+    },
+    {
       version: "2.6.0-alpha.6",
       title: "AI: is the curve analysable?",
       items: [
@@ -814,12 +833,14 @@
   const SEEN_KEY = "ivcurve-alpha.lastSeenVersion";
 
   function showWhatsNew() {
-    const html = CHANGELOG.map((rel) =>
+    // the history stays in English (data-no-i18n); a note says so in other languages
+    const note = IV.i18n.lang === "en" ? "" : `<p class="muted" style="margin:0 0 10px">${IV.escape(IV.t("The list of changes is kept in English."))}</p>`;
+    const html = note + `<div data-no-i18n>` + CHANGELOG.map((rel) =>
       `<h3 style="font-size:15px;margin:0 0 4px">Version ${IV.escape(rel.version)}`
       + (rel.title ? ` <span class="muted" style="font-family:var(--font);font-size:12px">· ${IV.escape(rel.title)}</span>` : "")
       + `</h3><ul style="margin:0 0 14px;padding-left:18px">`
       + rel.items.map((it) => `<li style="margin:3px 0">${IV.escape(it)}</li>`).join("")
-      + "</ul>").join("");
+      + "</ul>").join("") + "</div>";
     IV.ui.message("What’s new", html);
     try { localStorage.setItem(SEEN_KEY, APP_VERSION); } catch (_) { /* ignore */ }
   }
@@ -852,6 +873,10 @@
   let mainPlot;
 
   function init() {
+    // interface language: translate the page from now on, selector next to the theme switch
+    IV.i18n.start();
+    $("themeSwitch").before(IV.i18n.selector());
+    IV.i18n.onChange(() => IV.Plot.rerenderAll());
     fillIonSpecies();
     loadSettings();
     syncIonMass();
