@@ -1,6 +1,6 @@
 /* =============================================================================
    Interface languages: English (source), German, French, Simplified Chinese,
-   Japanese, Dutch, Portuguese (Brazil) and Urdu (written right to left).
+   Japanese, Dutch, Portuguese (Portugal) and Urdu (written right to left).
 
    The app is written in English; this module translates what is displayed:
    - IV.t(text): translation of one text (exact entry, or a pattern entry with
@@ -191,7 +191,7 @@
   }
 
   /** Name of the interface language, in English (for the AI). */
-  const languageName = () => ({ en: "English", de: "German", fr: "French", zh: "Simplified Chinese", ja: "Japanese", nl: "Dutch", pt: "Portuguese (Brazilian)", ur: "Urdu" })[lang];
+  const languageName = () => ({ en: "English", de: "German", fr: "French", zh: "Simplified Chinese", ja: "Japanese", nl: "Dutch", pt: "European Portuguese (as written in Portugal)", ur: "Urdu" })[lang];
 
   IV.i18n = { LANGS, get lang() { return lang; }, get rtl() { return RTL.has(lang); }, t, setLang, start, selector, languageName, onChange: (fn) => listeners.push(fn), seen, missing, baseTitle: "" };
   IV.t = t;

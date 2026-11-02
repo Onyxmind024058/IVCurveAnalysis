@@ -48,7 +48,7 @@ test("exact texts, patterns with numbers, nested patterns, line by line", () => 
   IV.i18n.setLang("nl");
   assert.equal(IV.t("AI verdict: bad"), "AI-oordeel: slecht");
   IV.i18n.setLang("pt");
-  assert.equal(IV.t("Pre-reviewed by the AI: 3 of 4."), "Pré-revisadas pela IA: 3 de 4.");
+  assert.equal(IV.t("Pre-reviewed by the AI: 3 of 4."), "Pré-revistas pela IA: 3 de 4.");
   IV.i18n.setLang("ur");
   assert.equal(IV.t("Cancel"), "منسوخ کریں");
   assert.equal(IV.i18n.rtl, true);
