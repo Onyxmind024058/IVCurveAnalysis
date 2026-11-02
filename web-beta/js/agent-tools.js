@@ -1,5 +1,5 @@
 /* =============================================================================
-   Tools of the AI analysis agent (pre-alpha).
+   Tools of the AI analysis agent (beta).
 
    The agent (a language model) never computes a physical quantity itself: it
    chooses fit regions and calls these tools, which run the app's own analysis

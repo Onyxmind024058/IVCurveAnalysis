@@ -1,8 +1,8 @@
 /* =============================================================================
-   Checks for the AI analysis agent (pre-alpha): the tools on synthetic curves
+   Checks for the AI analysis agent (beta): the tools on synthetic curves
    with known answers, and the agent loop against a scripted fake Mistral.
 
-       node --test web-alpha/tests/agent.test.js
+       node --test web-beta/tests/agent.test.js
    ============================================================================= */
 "use strict";
 const test = require("node:test");
@@ -132,7 +132,7 @@ test("agent loop: stops without a result if the model never submits", async () =
 test("the built-in skill is the maintained skill file", () => {
   const sync = require("../tools/sync-skill.js");
   const shipped = fs.readFileSync(sync.target, "utf8");
-  assert.equal(shipped, sync.build(fs.readFileSync(sync.source, "utf8")), "run: node web-alpha/tools/sync-skill.js");
+  assert.equal(shipped, sync.build(fs.readFileSync(sync.source, "utf8")), "run: node web-beta/tools/sync-skill.js");
   assert.match(require("../js/agent-skill.js").text, /Vp check in volts/);
 });
 

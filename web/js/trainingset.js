@@ -1,5 +1,5 @@
 /* =============================================================================
-   Training set (beta): reviewed curves kept in this browser (IndexedDB)
+   Training set : reviewed curves kept in this browser (IndexedDB)
    until they are exported as one .ivtrain file for training.
 
    Sample = the analysed mean curve + the regions the reviewer chose (manual

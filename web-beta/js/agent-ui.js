@@ -1,11 +1,12 @@
 /* =============================================================================
-   "AI analysis α" window (pre-alpha): AI provider, key and model, the skill, the
+   "AI analysis β" window (beta): AI provider, key and model, the skill, the
    agent's steps as they happen, and its result with the actions on it.
    ============================================================================= */
 (function (IV) {
   "use strict";
   const { el, fmtG, fmtE } = IV.ui;
 
+  // storage names kept from the pre-alpha (same origin), so keys and settings saved there still work
   const PROVIDER = "ivcurve-alpha.provider", ADDRESS = "ivcurve-alpha.customAddress";
   const keyName = (id) => `ivcurve-alpha.key.${id}`, modelName = (id) => `ivcurve-alpha.model.${id}`;
   const SKILL = "ivcurve-alpha.agentSkill", CONSENT = "ivcurve-alpha.agentConsent";
@@ -192,7 +193,7 @@
     const getCurve = () => opts.input || IV.app.agentCurve();
     let curve;
     try { curve = getCurve(); } catch (e) { IV.ui.message("No data", IV.escape(e.message)); return; }
-    const d = IV.ui.openDialog({ title: opts.title || "AI analysis α — AI agent (pre-alpha)", onClose: () => { if (ui && ui.abort) ui.abort.abort(); ui = null; } });
+    const d = IV.ui.openDialog({ title: opts.title || "AI analysis β — AI agent (beta)", onClose: () => { if (ui && ui.abort) ui.abort.abort(); ui = null; } });
     d.dlg.classList.add("agent");
     ui = { d, abort: null, last: null, ctx: null, messages: [] };
     const keep = (messages) => { if (ui) ui.messages = messages; if (opts.onConversation) opts.onConversation(messages); };
