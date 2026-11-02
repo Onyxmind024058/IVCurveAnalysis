@@ -1,5 +1,5 @@
 /* =============================================================================
-   Machine learning for fit-region proposals (beta).
+   Machine learning for fit-region proposals.
 
    Idea: the rules (auto.js) propose fit regions; people then move some of
    them when they review a curve. The model learns those corrections from

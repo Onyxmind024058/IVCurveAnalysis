@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.5.0-beta.2";
+  const APP_VERSION = "2.6.0-beta.1";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -400,14 +400,17 @@
     ], manualNote(r), undefined, manualWarn(r));
   }
 
-  function openManual() {
+  /** Manual OML window on the mean curve; startParams: regions to start from (e.g. the AI agent's). */
+  function openManual(startParams) {
     if (!needData()) return;
     try {
       const { xkey, x, imean } = meanCurve();
       const area = probeArea();
+      const fromAgent = startParams && startParams.ion;
       IV.openManualOML({
-        V: x, I: imean, probeArea: area, ionMass: numberValue("ionMass"), label: `Manual OML on averaged I-V (${xkey})`,
-        params: state.params.manual,
+        V: x, I: imean, probeArea: area, ionMass: numberValue("ionMass"),
+        label: fromAgent ? `Manual OML on averaged I-V (${xkey}) — AI regions` : `Manual OML on averaged I-V (${xkey})`,
+        params: fromAgent ? startParams : state.params.manual,
         onResults(r) {
           state.params.manual = r.params;
           addDerived(r, area);
@@ -650,10 +653,112 @@
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
     {
-      version: "2.5.0-beta.2",
+      version: "2.6.0-beta.1",
+      title: "Beta: AI analysis and 8 languages",
+      items: [
+        "The training data collection is now in the stable version (2.5.0); this beta adds the AI analysis from the former pre-alpha.",
+        "AI analysis β: an AI agent (Mistral, ChatGPT, Claude, Gemini, Groq, or any OpenAI-compatible server, with your own API key) analyses the loaded curve with the app's own tools, checks first whether it is analysable, flags poor RF compensation, gives a verdict (good / check / bad) and writes a report. Every number comes from the app.",
+        "Batch review: “AI pre-review β…” lets the agent analyse every curve of a series; its regions become the proposals you review, and it writes a summary of the series. “AI chat β…” opens a chat about the selected curve.",
+        "The interface is available in English, German, French, Dutch, Portuguese, Simplified Chinese, Japanese and Urdu.",
+        "API keys, AI settings and training data saved in the pre-alpha stay available here.",
+      ],
+    },
+    {
+      version: "2.6.0-alpha.10",
+      title: "Removing curves after an AI pre-review",
+      items: [
+        "Batch review: curves can be removed again after an AI pre-review. The summary of the series no longer opens by itself over the table (which blocked it until closed); it is written in the background and opened with “AI summary α ✓”.",
+        "A curve removed during an AI pre-review is no longer analysed; the end report counts it as removed.",
+      ],
+    },
+    {
+      version: "2.6.0-alpha.9",
+      title: "Japanese, Dutch, Portuguese and Urdu",
+      items: [
+        "Four more interface languages: Japanese (日本語), Dutch (Nederlands), Portuguese (Português, as written in Portugal) and Urdu (اردو). In Urdu the page is laid out right to left; graphs, numbers and file names stay left to right.",
+        "The AI writes its reports, chat answers and the series summary in these languages too.",
+      ],
+    },
+    {
+      version: "2.6.0-alpha.8",
+      title: "German, French and Simplified Chinese",
+      items: [
+        "The interface is available in English, German (Deutsch), French (Français) and Simplified Chinese (简体中文): language selector next to the Light/Dark switch. The first time it follows the browser's language; the choice is remembered.",
+        "Everything is translated as it appears, including the batch review, the AI windows, messages and the graphs (titles, axes, legends). Numbers, file names and units stay as they are; this list of changes stays in English.",
+        "The AI writes its reports, chat answers and the series summary in the chosen language.",
+      ],
+    },
+    {
+      version: "2.6.0-alpha.7",
+      title: "Batch view and AI verdict",
+      items: [
+        "Batch review: “Show: Parameter graph · Report · Curve” hides or shows each section on the right independently; the others take the space (all off: the table uses the full width). Remembered in this browser.",
+        "AI verdict per curve: “✓ AI pre-reviewed” (good), “⚠ AI: check” (usable with caveats) or “✗ AI: bad curve” (results not trustworthy: Vp check says review, poor RF compensation, Te inconsistent with Vp − Vf, transition not exponential, Vp at the end of the sweep, Te out of range). The app's checks can only make the AI's verdict stricter.",
+        "Bad curves are shown as red crosses in the parameter graph, left out of the trend line and the AI summary; the reasons appear in the report section and the AI window.",
+        "A doubtful RF compensation is now a minor flag (⚠ check). The skill and its Python pipeline use the same verdict (status good / check / bad).",
+      ],
+    },
+    {
+      version: "2.6.0-alpha.6",
+      title: "AI: is the curve analysable?",
+      items: [
+        "The AI first checks whether a curve is analysable at all (no floating potential, electron current drowned in noise, almost no exponential part). The app measures it for the agent: noise, signal-to-noise after smoothing, points of the exponential part above the noise, knee at the end of the sweep, flat top, spikes.",
+        "With margin: borderline curves (noisy, short transition, failed automatic proposal) are analysed and flagged, not rejected. Only when the attempts confirm it does the AI answer “not analysable”, with the reasons and no results.",
+        "Batch review: new status “— AI: not analysable”; these curves are left out of the summary plot and the AI summary, and a person confirms the verdict when reviewing them (or analyses them anyway).",
+        "The skill and its Python pipeline do the same (check_analysable / safe_analyse); the pipeline now finds Vf on the smoothed current, so noisy curves no longer fail.",
+      ],
+    },
+    {
+      version: "2.6.0-alpha.5",
+      title: "AI in the batch review",
+      items: [
+        "New statuses for the AI pre-review: “AI … queued”, “AI ⏳ working”, “✓ AI pre-reviewed”, “⚠ AI pre-reviewed” and “✗ AI no result”, so it is visible which curves the AI has done.",
+        "The pre-review no longer stops at the first problem: a curve whose analysis fails is marked “✗ AI no result” with the reason and the run goes on (it stops only for problems that would hit every curve — wrong key, unreachable server — or after 3 failures in a row). A report at the end lists every curve without result; “Only without AI result” retries them.",
+        "AI settings… in the batch window (provider, model, key); the AI in use is shown in the settings line and in the pre-review window.",
+        "AI chat α… in the batch window and under the selected curve: the AI window for that curve, with its AI result and a chat that continues the pre-review; “Use as this curve's AI proposal” takes regions changed in the chat over into the batch.",
+        "“Accept all good” also accepts curves with “✓ AI pre-reviewed” (marked as not reviewed by a person).",
+      ],
+    },
+    {
+      version: "2.6.0-alpha.4",
       title: "Save as",
       items: [
         "Every save and export (analysis .ivsession, batch .ivbatch, training data .ivtrain, CSV exports) now asks for the file name. In Chrome and Edge the computer's own Save-as window opens, so the folder can be chosen too; in other browsers a small window proposes the name, which can be changed.",
+      ],
+    },
+    {
+      version: "2.6.0-alpha.3",
+      title: "Choose the AI provider",
+      items: [
+        "AI analysis, chat and batch pre-review now work with Mistral, ChatGPT (OpenAI), Claude (Anthropic), Gemini (Google) or Groq, or with any other OpenAI-compatible server (cortecs.ai, Kimi/Moonshot, OpenRouter, a local Ollama or LM Studio…) by entering its address.",
+        "“Provider & key…” in the AI window: one API key and model per provider, all stored only in this browser. Model names can be picked from suggestions or typed; the model must support tool calling.",
+        "Before the first request to a provider, the app asks once whether the curve may be sent there.",
+        "Keys and the model saved for Mistral in the earlier pre-alpha are kept.",
+        "Mistral also suggests the GLM models it hosts (zai-glm-5-3, zai-glm-latest).",
+        "RF compensation check: the agent measures how rounded the knee above Vp is (in units of Te; sharp knee < 0.4, poor > 0.7 adds a quality flag) and says in its report when the RF compensation looks insufficient, with the consequences for Vp, Vf, ne and Te. The skill and its Python pipeline do the same.",
+      ],
+    },
+    {
+      version: "2.6.0-alpha.2",
+      title: "AI batch pre-review and chat",
+      items: [
+        "Batch review → AI pre-review α: the Mistral agent analyses every curve not reviewed yet (or only the ⚠/✗ ones). Its regions become the proposals, so “Review next” opens each curve with the AI's regions; curves with an AI proposal are tagged “AI”, and the agent's report is shown under the curve. Nothing counts as reviewed until a person accepts it.",
+        "AI summary α: at the end (or on demand) the agent writes a summary of the series from the table of app results: what still needs review, trends against your parameter, outliers.",
+        "AI analysis window: chat about the loaded curve. The assistant checks with the app's tools before answering, can try other regions on request, and continues from the analysis just run.",
+        "Requests are spaced to at most one per second and a rate-limit answer (429) is retried, so the free Mistral tier works for batches too.",
+        "Saved batches keep the AI proposals, reports and summary; the CSV export says where each proposal came from.",
+      ],
+    },
+    {
+      version: "2.6.0-alpha.1",
+      title: "Pre-alpha: AI analysis with a Mistral agent",
+      items: [
+        "AI analysis α: a Mistral model analyses the loaded curve. It follows a skill (the Langmuir probe analysis procedure with the Vp check in volts, the Te cross-check from Vp − Vf and the quality flags) and works only through the app's own analysis, so every number comes from the app.",
+        "The agent starts from the rule-based regions, tries to fix any quality flag, and then reports: status, results, checks, caveats and why it chose its regions. Every step is shown.",
+        "Open the result in the manual OML window to check and accept it (accepted curves count as reviewed), or show it in the main window marked as not reviewed.",
+        "Uses your own Mistral API key, stored only in this browser. The mean curve and the probe/gas settings are sent to api.mistral.ai only when you start an analysis.",
+        "Another skill file (.md) can be loaded instead of the built-in one.",
+        "This is a pre-alpha for testing; use the stable version for your results.",
       ],
     },
     {
@@ -755,12 +860,14 @@
   const SEEN_KEY = "ivcurve-beta.lastSeenVersion";
 
   function showWhatsNew() {
-    const html = CHANGELOG.map((rel) =>
+    // the history stays in English (data-no-i18n); a note says so in other languages
+    const note = IV.i18n.lang === "en" ? "" : `<p class="muted" style="margin:0 0 10px">${IV.escape(IV.t("The list of changes is kept in English."))}</p>`;
+    const html = note + `<div data-no-i18n>` + CHANGELOG.map((rel) =>
       `<h3 style="font-size:15px;margin:0 0 4px">Version ${IV.escape(rel.version)}`
       + (rel.title ? ` <span class="muted" style="font-family:var(--font);font-size:12px">· ${IV.escape(rel.title)}</span>` : "")
       + `</h3><ul style="margin:0 0 14px;padding-left:18px">`
       + rel.items.map((it) => `<li style="margin:3px 0">${IV.escape(it)}</li>`).join("")
-      + "</ul>").join("");
+      + "</ul>").join("") + "</div>";
     IV.ui.message("What’s new", html);
     try { localStorage.setItem(SEEN_KEY, APP_VERSION); } catch (_) { /* ignore */ }
   }
@@ -793,6 +900,10 @@
   let mainPlot;
 
   function init() {
+    // interface language: translate the page from now on, selector next to the theme switch
+    IV.i18n.start();
+    $("themeSwitch").before(IV.i18n.selector());
+    IV.i18n.onChange(() => IV.Plot.rerenderAll());
     fillIonSpecies();
     loadSettings();
     syncIonMass();
@@ -812,7 +923,8 @@
     $("welcomeExample").addEventListener("click", loadExample);
 
     $("analyseBtn").addEventListener("click", runAnalysis);
-    $("manualBtn").addEventListener("click", openManual);
+    $("manualBtn").addEventListener("click", () => openManual());
+    $("agentBtn").addEventListener("click", () => { if (needData()) IV.openAgent(); });
     $("eepfBtn").addEventListener("click", openEEPF);
     $("epflBtn").addEventListener("click", openEPFL);
     $("exportMean").addEventListener("click", () => { closeMenus(); exportMeanCSV(); });
@@ -932,5 +1044,26 @@
       }
     },
     log,
+    /** The mean curve and settings the AI agent analyses. */
+    agentCurve() {
+      const { xkey, x, imean } = meanCurve();
+      return IV.app.agentInput({ xkey, x, imean }, state.fileName || "");
+    },
+    /** Agent input for a mean curve ({xkey, x, imean}) with the main window's probe and ion settings. */
+    agentInput({ xkey, x, imean }, file) {
+      return {
+        V: x, I: imean, xkey, area: probeArea(), massAmu: numberValue("ionMass"), species: $("ionGas").value,
+        probe: { diameter_mm: numberValue("diameter"), length_mm: numberValue("length") }, file,
+      };
+    },
+    /** Opens the manual OML window starting from the AI agent's regions (accepting it counts as a review). */
+    openManualWith: (params) => openManual(params),
+    /** Shows an AI result in the main window (not reviewed; not added to the training data). */
+    useAgentResult(r) {
+      addDerived(r, probeArea());
+      setOmlResults(r);
+      manualCard(r, "AI analysis — not reviewed");
+      status("AI analysis results received");
+    },
   };
 })(window.IV = window.IV || {});

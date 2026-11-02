@@ -1,8 +1,8 @@
 /* =============================================================================
-   Checks for the interface languages (pre-alpha): the dictionary is complete
+   Checks for the interface languages (beta): the dictionary is complete
    and consistent, and texts with numbers are translated through patterns.
 
-       node --test web-alpha/tests/i18n.test.js
+       node --test web-beta/tests/i18n.test.js
    ============================================================================= */
 "use strict";
 const test = require("node:test");

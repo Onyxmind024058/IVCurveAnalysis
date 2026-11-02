@@ -1,5 +1,5 @@
 /* =============================================================================
-   AI providers for the agent (pre-alpha): where requests go and how they are
+   AI providers for the agent (beta): where requests go and how they are
    written. The agent keeps one conversation format (OpenAI-style chat
    messages with tool_calls); each provider turns it into its own request and
    its answer back into that format.

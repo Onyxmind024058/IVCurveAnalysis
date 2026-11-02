@@ -1,8 +1,8 @@
 /* =============================================================================
-   Checks for the AI providers (pre-alpha): request format per provider, the
+   Checks for the AI providers (beta): request format per provider, the
    Claude (Messages API) conversion, and an agent run against a fake Claude.
 
-       node --test web-alpha/tests/providers.test.js
+       node --test web-beta/tests/providers.test.js
    ============================================================================= */
 "use strict";
 const test = require("node:test");

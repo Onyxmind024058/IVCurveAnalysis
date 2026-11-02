@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.4.1";
+  const APP_VERSION = "2.5.0";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -257,18 +257,7 @@
   }
 
   /** Per scan: drop the first/last N acquired points, then keep only from <= x <= to. */
-  function cropScans(raw, crop, xkey) {
-    return raw.map((s) => {
-      const n = s.IData.length;
-      const keep = [];
-      for (let k = crop.skipStart; k < n - crop.skipEnd; k++) {
-        const x = s[xkey][k];
-        if (!(x < crop.from) && !(x > crop.to)) keep.push(k);
-      }
-      const pick = (a) => Float64Array.from(keep, (k) => a[k]);
-      return { ...s, VData: pick(s.VData), RefData: pick(s.RefData), IData: pick(s.IData) };
-    });
-  }
+  const cropScans = (raw, crop, xkey) => N.cropScans(raw, crop, xkey);
 
   /** Recompute state.scans from the raw data and the Data range panel. */
   function applyCrop(userChange = true) {
@@ -424,6 +413,9 @@
           addDerived(r, area);
           setOmlResults(r);
           manualCard(r);
+          // accepted manual analyses are training data
+          IV.training.addReview({ file: state.fileName, x, imean, xkey, params: r.params, results: r, area, scans: state.rawScans.length })
+            .then((added) => { if (added) log("Curve added to the training data."); });
           status("Manual OML results received");
         },
       });
@@ -658,10 +650,32 @@
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
     {
-      version: "2.4.1",
+      version: "2.5.0",
+      title: "Training data for machine learning",
+      items: [
+        "From the beta: every curve you review and accept (batch review or manual OML) is kept in this browser as training data for a model that will propose the fit regions the way people place them. “Training” shows the progress towards 200 curves and exports them as one .ivtrain file for the maintainer; collection can be switched off there.",
+        "Training → Import also accepts saved batches (.ivbatch): their curves marked “✔ reviewed” are added.",
+        "Once a trained model is shipped with the app, the batch review can take its proposals from it; until then it uses the same rules as before.",
+        "The new beta adds an AI analysis with an AI agent (Mistral, ChatGPT, Claude, Gemini, Groq…) and the interface in 8 languages: see “Try beta”.",
+      ],
+    },
+    {
+      version: "2.5.0-beta.2",
       title: "Save as",
       items: [
         "Every save and export (analysis .ivsession, batch .ivbatch, training data .ivtrain, CSV exports) now asks for the file name. In Chrome and Edge the computer's own Save-as window opens, so the folder can be chosen too; in other browsers a small window proposes the name, which can be changed.",
+      ],
+    },
+    {
+      version: "2.5.0-beta.1",
+      title: "Beta: training data for machine learning",
+      items: [
+        "The assisted batch review is now in the stable version (2.4.0); this beta collects training data for a model that proposes the fit regions the way people place them.",
+        "Every curve you review and accept (batch review or manual OML) is added to a local training set; Training β shows the progress towards 200 curves and exports it as one .ivtrain file for the maintainer. Collection can be switched off there.",
+        "Training β → Import also accepts saved batches (.ivbatch): their curves marked “✔ reviewed” are added; curves accepted without review, not reviewed or skipped are left out, and a summary says why. Each imported curve is rebuilt with the settings it was reviewed with and must reproduce the saved results; otherwise it is skipped.",
+        "One model serves all gases and probes: it takes the ion mass as an input, and the training report shows the accuracy per ion species and per probe.",
+        "The batch review takes its proposals from a trained model once one is shipped with the app; until then it uses the same rules as the stable version.",
+        "Curves collected in the earlier pre-alpha (training data) stay available here.",
       ],
     },
     {
@@ -748,6 +762,31 @@
     },
   ];
   // separate from the stable app in /web/ (same origin), so switching between them does not re-announce
+  // ---------------------------------------------------------------------------
+  // Beta version (web-beta/ next to this folder)
+  // ---------------------------------------------------------------------------
+
+  const BETA_URL = "../web-beta/";
+  // Keep in step with the beta's own What's new.
+  const BETA_FEATURES = [
+    ["AI analysis", "an AI agent (Mistral, ChatGPT, Claude, Gemini, Groq or any OpenAI-compatible server, with your own API key) analyses a curve with the app's own tools, checks whether it is analysable, flags poor RF compensation and writes a report."],
+    ["AI pre-review of a batch", "the agent analyses every curve of a series and marks each one ✓ good, ⚠ check, ✗ bad curve or not analysable; its regions become the proposals you review, and it writes a summary of the series."],
+    ["Chat about a curve", "ask the AI about a curve; it checks with the app's tools before answering."],
+    ["8 languages", "English, German, French, Dutch, Portuguese, Simplified Chinese, Japanese and Urdu."],
+  ];
+
+  async function showTryBeta() {
+    const items = BETA_FEATURES.map(([t, d]) => `<li style="margin:5px 0"><b>${IV.escape(t)}</b>: ${IV.escape(d)}</li>`).join("");
+    const choice = await IV.ui.message("Try the beta version",
+      `<p style="margin:0 0 8px">The beta is this app plus new features that are still being tested:</p>
+       <ul style="margin:0 0 10px;padding-left:18px">${items}</ul>
+       <p class="muted" style="margin:0;font-size:12px">The beta opens in a new tab; this version stays as it is.
+       Your files are read only on your computer, except what you choose to send to an AI provider. Feedback is welcome:
+       <a href="mailto:paul.hiret@unibas.ch">paul.hiret@unibas.ch</a>.</p>`,
+      [{ label: "Not now" }, { label: "Open beta version ↗", value: "open", primary: true }]);
+    if (choice === "open") window.open(BETA_URL, "_blank", "noopener");
+  }
+
   const SEEN_KEY = "ivcurve.lastSeenVersion";
 
   function showWhatsNew() {
@@ -771,31 +810,6 @@
       return;
     }
     showWhatsNew();
-  }
-
-  // ---------------------------------------------------------------------------
-  // Beta version (web-beta/ next to this folder)
-  // ---------------------------------------------------------------------------
-
-  const BETA_URL = "../web-beta/";
-  // Keep in step with the beta's own What's new.
-  const BETA_FEATURES = [
-    ["Training data for machine learning", "every curve you review and accept (batch review or manual OML) is kept in your browser, to train a model that proposes the fit regions the way people place them."],
-    ["Training β window", "shows the progress towards 200 reviewed curves and exports them as one .ivtrain file to send to the maintainer."],
-    ["Earlier batches count too", "import saved batches (.ivbatch): their curves marked “✔ reviewed” are added to the training data."],
-    ["Model proposals", "once a trained model is shipped, the batch review takes its proposals from it; until then it uses the same rules as this version."],
-  ];
-
-  async function showTryBeta() {
-    const items = BETA_FEATURES.map(([t, d]) => `<li style="margin:5px 0"><b>${IV.escape(t)}</b>: ${IV.escape(d)}</li>`).join("");
-    const choice = await IV.ui.message("Try the beta version",
-      `<p style="margin:0 0 8px">The beta is this app plus new features that are still being tested:</p>
-       <ul style="margin:0 0 10px;padding-left:18px">${items}</ul>
-       <p class="muted" style="margin:0;font-size:12px">The beta opens in a new tab; this version stays as it is.
-       Your files are still read only on your computer. Feedback is welcome:
-       <a href="mailto:paul.hiret@unibas.ch">paul.hiret@unibas.ch</a>.</p>`,
-      [{ label: "Not now" }, { label: "Open beta version ↗", value: "open", primary: true }]);
-    if (choice === "open") window.open(BETA_URL, "_blank", "noopener");
   }
 
   function showAbout() {
@@ -928,15 +942,7 @@
   IV.app = {
     /** Mean curve of a file's scans with the main window's x axis and data range. */
     curveFor(rawScans) {
-      const xkey = $("xaxis").value;
-      const crop = readCrop();
-      let scans = rawScans;
-      if (crop.enabled) {
-        scans = cropScans(rawScans, crop, xkey);
-        if (Math.min(...scans.map((s) => s.IData.length)) < 10) throw new Error("The data range leaves fewer than 10 points.");
-      }
-      const avg = N.averageScans(N.splitSweeps(scans, xkey), xkey);
-      return { xkey, x: avg.x, imean: avg.imean };
+      return N.curveWith(rawScans, $("xaxis").value, readCrop());
     },
     probeArea,
     ionMass: () => numberValue("ionMass"),

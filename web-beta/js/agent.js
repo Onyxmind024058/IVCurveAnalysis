@@ -1,5 +1,5 @@
 /* =============================================================================
-   AI analysis agent (pre-alpha): a language model that analyses one I–V curve
+   AI analysis agent (beta): a language model that analyses one I–V curve
    with the app's tools (agent-tools.js), guided by a skill (agent-skill.js).
 
    The loop: system prompt (preamble + skill) → the model calls tools → the
