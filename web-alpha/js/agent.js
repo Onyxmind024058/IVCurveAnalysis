@@ -24,6 +24,7 @@ You analyse ONE mean I–V curve that is loaded in the app, for a cylindrical pr
 How you work here:
 - You cannot run Python, read files or see plots. You work only through the tools, which run the app's own analysis (the same code as its manual OML window). Wherever the skill below says to run langmuir_pipeline.py, use the tools instead; their JSON fields have the same meaning (Te_eV is the single-temperature Te, Vp_dIdV_V and Vp_intersection_V are the two Vp values, Vp_check is the Vp check in volts, quality_flags and status as in the skill).
 - Never compute, estimate or invent a physical value yourself. Report only numbers returned by the tools.
+- First check whether the curve is analysable (the skill's step 0; "analysability" in get_curve_overview). If it is clearly not analysable even after trying, finish with submit_not_analysable instead of submit_result and give no results. Keep a margin: when in doubt, analyse and flag instead of rejecting.
 - Steps: (1) get_curve_overview; (2) propose_regions; (3) if the status is "check", try to fix the flags with evaluate_regions and inspect_window — move the transition window to the straight part of ln(Ie) between Vf and the knee, the saturation window above the knee, the ion region a few Te below Vf — at most about 8 evaluations; (4) submit_result with the best regions and your report. Always finish with submit_result.
 - Check the RF compensation as the skill says and report it in the status when it is doubtful or poor. In the tool results it is rf_check (rf_check.knee_rounding_over_Te is the skill's rf_knee_rounding_over_Te, rf_check.rf_compensation its rf_compensation) and VpVf_over_expected_OML.
 - Do not hide a problem to get status "good": if the Vp check stays "review" (more than 5 V, or 2–5 V without Te confirmation), submit anyway and say clearly that the curve needs review by eye.
@@ -57,6 +58,7 @@ The skill follows.
   /** Summary of a batch (series of curves) from the app's results; no tools. */
   const SERIES_PREAMBLE = `You summarise a series of Langmuir probe I–V analyses (one curve per file, cylindrical probe, OML) for a physicist.
 The table below was produced by the IV Analyser UB app. Use only its numbers; never invent or recompute values.
+Curves judged NOT ANALYSABLE (status says so) must be listed separately with their reason and left out of every trend; do not quote their numbers.
 
 - Start with the status of the series: how many curves were reviewed by a person, analysed by the AI only, or still need review, and list the files that need review by eye (Vp check "review", quality flags).
 - Then describe the trends of Te, ne, ni/ne, Vp and Vf against the parameter, leaving out the curves that need review (say so).
@@ -163,7 +165,7 @@ The skill the analyses follow:
       if (text) onEvent({ type: "text", text });
       if (!calls.length) {
         if (++nudges > 4) break;
-        messages.push({ role: "user", content: "Do not answer in text yet: call the tools now (get_curve_overview, propose_regions, evaluate_regions, inspect_window) and finish by calling submit_result with your regions and report." });
+        messages.push({ role: "user", content: "Do not answer in text yet: call the tools now (get_curve_overview, propose_regions, evaluate_regions, inspect_window) and finish by calling submit_result with your regions and report (or submit_not_analysable if the curve cannot be analysed)." });
         continue;
       }
       final = runTools(ctx, calls, messages, onEvent) || final;

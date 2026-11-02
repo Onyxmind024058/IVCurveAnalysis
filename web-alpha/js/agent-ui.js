@@ -378,7 +378,30 @@
     chatInput.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } });
     newChatBtn.addEventListener("click", () => { ui.messages = []; ui.ctx = null; resetChatLog("New conversation."); });
 
+    function showNotAnalysable(final, meta) {
+      ui.last = final;
+      const m = (final.summary && final.summary.analysability && final.summary.analysability.metrics) || {};
+      resultBox.replaceChildren(...[
+        el("div.agent-status", {}, [el("span.pill.warn", { text: "✗ not analysable" }), el("span.muted", { text: ` ${meta}` })]),
+        el("p", { style: "margin:8px 0", text: final.reason }),
+        el("table.results", {}, [
+          ["Noise per point", `${fmtE(m.noise_per_point_A, 2)} A`],
+          ["Electron signal / noise (smoothed)", fmtG(m.electron_signal_to_noise_smoothed, 3)],
+          ["Points of the exponential part above the noise", String(m.transition_points_above_noise ?? "–")],
+        ].map(([k, x]) => el("tr", {}, [el("th", { text: k }), el("td", { text: x })]))),
+        el("h3", { text: "Report of the agent" }),
+        el("div.agent-report", { text: final.report || "(no report)" }),
+        el("p.muted", { style: "font-size:12px;margin:6px 0 0", text: "No results are given for a curve the agent judges not analysable. You can still try it yourself in the manual OML window." }),
+        el("div.agent-row", { style: "margin-top:10px" }, [
+          opts.onUse ? el("button.btn.primary", { text: "Mark as not analysable (AI) in the batch", onclick: () => { opts.onUse(final); IV.ui.toast("Marked as not analysable by the AI; confirm it when you review the curve."); } })
+            : el("button.btn", { text: "Open manual OML anyway…", onclick: () => IV.app.openManualWith(undefined) }),
+          el("button.btn", { text: "Copy report", onclick: () => navigator.clipboard.writeText(`AI: not analysable — ${curve.file || "loaded data"}\n${final.reason}\n\n${final.report}`).then(() => IV.ui.toast("Report copied.")) }),
+        ]),
+      ]);
+    }
+
     function showResult(final, meta, skillName) {
+      if (final.analysable === false) { showNotAnalysable(final, meta); return; }
       const s = final.summary, r = final.results;
       ui.last = final;
       const good = s.status === "good";

@@ -218,6 +218,13 @@
         vmax: { type: "number", description: "Upper bound (V)." },
       }, required: ["vmin", "vmax"] } } },
     { type: "function", function: {
+      name: "submit_not_analysable",
+      description: "Final step instead of submit_result, only when the curve cannot be analysed even after trying (see the skill's analysability check). No results are reported for it.",
+      parameters: { type: "object", properties: {
+        reason: { type: "string", description: "Short reason, e.g. “no floating potential: the current never becomes positive”." },
+        report: { type: "string", description: "Report for the user: why the curve is not analysable, the measured indicators, what was tried, and what could fix the measurement." },
+      }, required: ["reason", "report"] } } },
+    { type: "function", function: {
       name: "submit_result",
       description: "Final step: the regions you choose and your report. The app evaluates them once more; the numbers shown to the user come from the app, not from your text.",
       parameters: { type: "object", properties: {
@@ -225,6 +232,63 @@
         report: { type: "string", description: "Report for the user (plain text, short paragraphs or lists): status first, then the results, the checks and the caveats, following the skill." },
       }, required: [...REGION_REQUIRED, "report"] } } },
   ];
+
+  /**
+   * Is the curve analysable at all? Measured before any fit, with margin:
+   * "not analysable" only for clear cases (no floating potential, electron
+   * signal drowned in noise, almost no exponential part); borderline curves
+   * are "doubtful — try" and should be analysed and flagged, not rejected.
+   */
+  const ANALYSABLE = { minPoints: 30, snHard: 5, snSoft: 30, transHard: 5, transSoft: 15, spikySigma: 8, spikyFrac: 0.02 };
+  function analysability(ctx) {
+    const v = ctx.V, I = ctx.I, n = v.length;
+    const hard = [], soft = [];
+    if (n < ANALYSABLE.minPoints) hard.push(`only ${n} points`);
+    const smooth = defaultSmooth(ctx);
+    const Is = N.smoothSignal(I, smooth.method, smooth.window, smooth.order);
+    // noise per point from second differences (insensitive to the curve's own shape), robust (MAD);
+    // the analysis smooths over `window` points, so what it sees is noise / sqrt(window)
+    const d2 = [];
+    for (let k = 1; k < n - 1; k++) if ([I[k - 1], I[k], I[k + 1]].every(Number.isFinite)) d2.push(I[k] - (I[k - 1] + I[k + 1]) / 2);
+    const med = N.nanmedian(d2);
+    const noise = Math.max((1.4826 * N.nanmedian(d2.map((x) => Math.abs(x - med)))) / Math.sqrt(1.5), 1e-15);
+    const noiseSmoothed = noise / Math.sqrt(smooth.window);
+    const Vf = N.finiteCrossingX(v, Is);
+    const Imax = N.nanmax(Is), Imin = N.nanmin(Is);
+    const sn = Imax / noiseSmoothed, snRaw = Imax / noise;
+    if (!Number.isFinite(Vf)) hard.push(Imax <= 0 ? "the current never becomes positive (no electron current, no floating potential)" : Imin >= 0 ? "the current never becomes negative (no ion branch, no floating potential)" : "no floating potential (no zero crossing)");
+    if (!(sn >= ANALYSABLE.snHard)) hard.push(`electron current is only ${sig(sn, 2)}× the noise even after smoothing`);
+    else if (snRaw < ANALYSABLE.snSoft) soft.push(`noisy: electron current is ${sig(snRaw, 2)}× the noise of a single point`);
+    // points of the exponential part: between Vf and the dI/dV peak, clearly above the noise
+    let transPts = 0, kneeAtEdge = false, vp = NaN;
+    if (Number.isFinite(Vf)) {
+      const d = N.smoothSignal(N.gradient(Is, v), smooth.method, smooth.window, smooth.order);
+      let k = -1;
+      for (let j = 0; j < n; j++) if (v[j] > Vf && Number.isFinite(d[j]) && (k < 0 || d[j] > d[k])) k = j;
+      if (k >= 0) {
+        vp = v[k];
+        kneeAtEdge = v[k] > v[n - 1] - 0.03 * (v[n - 1] - v[0]);
+        // on the smoothed current itself (an ion-current subtraction would be meaningless on a bad curve)
+        for (let j = 0; j < k; j++) if (v[j] > Vf && Is[j] > 3 * noiseSmoothed) transPts++;
+      }
+      if (transPts < ANALYSABLE.transHard) hard.push(`only ${transPts} points of the exponential (transition) part above the noise`);
+      else if (transPts < ANALYSABLE.transSoft) soft.push(`short transition region (${transPts} points)`);
+      if (kneeAtEdge) soft.push("the knee (Vp) is at the end of the sweep: no electron saturation measured");
+    }
+    // clipping (amplifier limit) and spikes
+    let top = 0;
+    for (let j = n - 1; j >= 0 && Math.abs(I[j] - N.nanmax(I)) <= 1e-9 * Math.abs(N.nanmax(I)) + 1e-18; j--) top++;
+    if (top >= Math.max(5, 0.02 * n)) soft.push(`the current is flat at its maximum for the last ${top} points (amplifier limit?)`);
+    const spikes = d2.filter((x) => Math.abs(x - med) > ANALYSABLE.spikySigma * Math.sqrt(1.5) * noise).length;
+    if (spikes > ANALYSABLE.spikyFrac * n) soft.push(`${spikes} spikes far above the noise`);
+    if (!ctx.proposal) soft.push(`the rule-based proposal failed (${ctx.proposalError})`);
+    const verdict = hard.length ? "likely not analysable" : soft.length ? "doubtful — try, then flag" : "analysable";
+    return {
+      verdict, hard_reasons: hard, soft_reasons: soft,
+      metrics: { noise_per_point_A: sig(noise, 3), electron_signal_to_noise_smoothed: sig(sn, 3), electron_signal_to_noise_per_point: sig(snRaw, 3),
+        transition_points_above_noise: transPts, Vf_V: sig(Vf), knee_V: sig(vp) },
+    };
+  }
 
   function overview(ctx) {
     const v = ctx.V, n = v.length;
@@ -243,6 +307,7 @@
       rows.push([sig(v[k]), sig(ctx.I[k], 4), lnIe && lnIe[k] > 0 ? sig(Math.log(lnIe[k]), 4) : null]);
     }
     return {
+      analysability: analysability(ctx),
       file: ctx.file, x_axis: ctx.xkey,
       probe: ctx.probe, probe_area_m2: sig(ctx.area, 4),
       ion: { species: ctx.species, mass_amu: sig(ctx.massAmu, 5) },
@@ -297,6 +362,14 @@
         }
         case "inspect_window":
           return { content: inspect(ctx, Number(args.vmin), Number(args.vmax)) };
+        case "submit_not_analysable": {
+          const reason = String(args.reason || "not analysable");
+          return {
+            content: { accepted: true, status: "not analysable" },
+            final: { analysable: false, reason, report: String(args.report || ""), params: null, results: null, flags: [reason],
+              summary: { status: "not analysable", quality_flags: [reason], analysability: analysability(ctx) } },
+          };
+        }
         case "submit_result": {
           const p = paramsFrom(ctx, args);
           const ev = evaluate(ctx, p);
@@ -314,7 +387,7 @@
     }
   }
 
-  const api = { TOOL_DEFS, makeContext, call, paramsFrom, evaluate, summary, regionsOf, rfCheck, RF_LIMITS };
+  const api = { TOOL_DEFS, makeContext, call, paramsFrom, evaluate, summary, regionsOf, rfCheck, RF_LIMITS, analysability, ANALYSABLE };
   if (root.IV) root.IV.agentTools = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);
