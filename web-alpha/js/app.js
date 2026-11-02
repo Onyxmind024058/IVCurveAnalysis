@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.6.0-alpha.9";
+  const APP_VERSION = "2.6.0-alpha.10";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -652,6 +652,14 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.6.0-alpha.10",
+      title: "Removing curves after an AI pre-review",
+      items: [
+        "Batch review: curves can be removed again after an AI pre-review. The summary of the series no longer opens by itself over the table (which blocked it until closed); it is written in the background and opened with “AI summary α ✓”.",
+        "A curve removed during an AI pre-review is no longer analysed; the end report counts it as removed.",
+      ],
+    },
     {
       version: "2.6.0-alpha.9",
       title: "Japanese, Dutch, Portuguese and Urdu",
