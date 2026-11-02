@@ -61,8 +61,12 @@
      *   title, xlabel, ylabel, logy, xrange, yrange, text
      * }
      */
-    render(spec) {
-      this.spec = spec;
+    render(specEn) {
+      this.spec = specEn;  // kept in English: redrawn in another language when it changes
+      const tr_ = (x) => (IV.t && typeof x === "string" ? IV.t(x) : x);
+      const spec = { ...specEn, title: tr_(specEn.title), xlabel: tr_(specEn.xlabel), ylabel: tr_(specEn.ylabel), text: tr_(specEn.text),
+        traces: (specEn.traces || []).map((x) => (x.name ? { ...x, name: tr_(x.name) } : x)),
+        vlines: (specEn.vlines || []).map((x) => (x.label ? { ...x, label: tr_(x.label) } : x)) };
       const t = themeTokens();
       const data = [];
       let colorIdx = 0;

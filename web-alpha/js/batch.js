@@ -46,6 +46,9 @@
     ["Te_VpVf_OML_eV", "Te from Vp − Vf, OML (eV)"], ["Iis_A", "Iis at Vf (A)"], ["Ies_A", "Ies (A)"],
   ];
 
+  /** <p> with one sentence, translated here as a whole (the page translator leaves it alone). */
+  const para = (english, style = "margin:0 0 8px", cls = "") => `<p data-no-i18n${cls ? ` class="${cls}"` : ""} style="${style}">${IV.escape(IV.t(english))}</p>`;
+
   const batch = { paramName: "Parameter", items: [], csvMapping: null, startFrom: "proposal", proposalSource: "rules", variable: "Te_eV", selected: -1,
     aiSummary: null, aiRun: null };
   let nextId = 1;
@@ -203,8 +206,8 @@
     const good = batch.items.filter((it) => it.status === "good" || it.status === "aigood");
     if (!good.length) { IV.ui.toast("No curves with status “good” to accept."); return; }
     const ok = await IV.ui.message("Accept all good curves?",
-      `<p>${good.length} curve${good.length > 1 ? "s" : ""} passed every automatic check. They will be accepted <b>without opening them</b> and marked “✓ unreviewed” in the table and the export.</p>
-       <p class="muted">Curves with “⚠ check” or “✗ failed” still have to be reviewed.</p>`,
+      para(`Curves that passed every check: ${good.length}. They will be accepted without opening them and marked “✓ unreviewed” in the table and the export.`)
+      + para("Curves with “⚠ check”, “✗ failed” or “✗ AI: bad curve” still have to be reviewed.", "margin:0", "muted"),
       [{ label: "Cancel" }, { label: "Accept without review", value: "yes", primary: true }]);
     if (ok !== "yes") return;
     for (const it of good) it.status = "auto";
@@ -281,13 +284,11 @@
     let choice;
     for (;;) {
       choice = await IV.ui.message("AI pre-review of the batch",
-        `<p style="margin:0 0 8px">AI: <b>${IV.escape(ready.label)}</b> · skill ${IV.escape(ready.skill.name)}</p>
-         <p style="margin:0 0 8px">The agent analyses the curves one after the other, like the single-curve AI analysis. Their status becomes
-         <b>✓/⚠ AI pre-reviewed</b> (or ✗ AI no result) and the AI's regions become the proposals: <b>Review next</b> opens the curves with them,
-         and nothing counts as reviewed until a person accepts it. A curve whose analysis fails is marked and the run goes on.</p>
-         <p style="margin:0 0 8px">About 5–10 requests per curve; at most one request per second. At the end you get a report and the agent writes a summary of the series.</p>
-         <p class="muted" style="margin:0">Curves not reviewed yet: ${open.length}; without an AI result: ${withoutAI.length}; with ⚠/✗: ${flagged.length}.
-         ${excluded ? `${excluded} curve${excluded > 1 ? "s are" : " is"} left out (reviewed, accepted without review, or skipped).` : ""}</p>`,
+        `<p style="margin:0 0 8px">AI: <b>${IV.escape(ready.label)}</b> · skill ${IV.escape(ready.skill.name)}</p>`
+        + para("The agent analyses the curves one after the other, like the single-curve AI analysis. Each curve then shows the AI's verdict (✓ good, ⚠ check, ✗ bad curve, — not analysable, or ✗ no result), and the AI's regions become its proposal: “Review next” opens the curves with them, and nothing counts as reviewed until a person accepts it. A curve whose analysis fails is marked and the run goes on.")
+        + para("About 5–10 requests per curve; at most one request per second. At the end you get a report and the agent writes a summary of the series.")
+        + para(`Curves not reviewed yet: ${open.length}; without an AI result: ${withoutAI.length}; with ⚠/✗: ${flagged.length}.`, "margin:0", "muted")
+        + (excluded ? para(`Left out (reviewed, accepted without review, or skipped): ${excluded}.`, "margin:0", "muted") : ""),
         [{ label: "Cancel" }, { label: "AI settings…", value: "settings" },
           ...(withoutAI.length && withoutAI.length < open.length ? [{ label: `Only without AI result (${withoutAI.length})`, value: "missing" }] : []),
           ...(flagged.length && flagged.length < open.length ? [{ label: `Only ⚠ / ✗ (${flagged.length})`, value: "flagged" }] : []),
@@ -345,11 +346,13 @@
     render();
 
     await IV.ui.message(stopped ? "AI pre-review stopped" : fatal ? "AI pre-review interrupted" : "AI pre-review finished",
-      `<p style="margin:0 0 8px"><b>${done}</b> of ${list.length} curve${list.length > 1 ? "s" : ""} pre-reviewed by the AI${failures.length ? `, <b>${failures.length}</b> without result` : ""}${list.length - done - failures.length > 0 ? `, ${list.length - done - failures.length} not reached` : ""}.</p>
-       ${fatal ? `<p style="margin:0 0 8px;color:var(--red)">${IV.escape(fatal)}</p>` : ""}
-       ${failures.length ? `<ul style="margin:0 0 8px;padding-left:18px">${failures.map(([name, why]) => `<li><b>${IV.escape(name)}</b>: ${IV.escape(why)}</li>`).join("")}</ul>` : ""}
-       ${failures.length || fatal || stopped ? `<p class="muted" style="margin:0">Run the pre-review again with “Only without AI result” to retry the missing curves${fatal ? " after fixing the problem (AI settings…)" : ""}.</p>` : ""}
-       ${list.some((it) => it.status === "ainone") ? `<p class="muted" style="margin:6px 0 0">Curves marked “— AI: not analysable” are left out of the plot and the summary; confirm or overrule the verdict when you review them.</p>` : ""}`);
+      para(`Pre-reviewed by the AI: ${done} of ${list.length}.`)
+      + (failures.length ? para(`Without result: ${failures.length}.`) : "")
+      + (list.length - done - failures.length > 0 ? para(`Not reached: ${list.length - done - failures.length}.`) : "")
+      + (fatal ? `<p style="margin:0 0 8px;color:var(--red)">${IV.escape(IV.t(fatal))}</p>` : "")
+      + (failures.length ? `<ul style="margin:0 0 8px;padding-left:18px">${failures.map(([name, why]) => `<li data-no-i18n><b>${IV.escape(name)}</b>: ${IV.escape(IV.t(why))}</li>`).join("")}</ul>` : "")
+      + (failures.length || fatal || stopped ? para(fatal ? "Fix the problem (AI settings…), then run the pre-review again with “Only without AI result” to retry the missing curves." : "Run the pre-review again with “Only without AI result” to retry the missing curves.", "margin:0", "muted") : "")
+      + (list.some((it) => it.status === "ainone") ? para("Curves marked “— AI: not analysable” are left out of the plot and the summary; confirm or overrule the verdict when you review them.", "margin:6px 0 0", "muted") : ""));
     if (!stopped && !fatal && done > 0 && batch.items.filter((it) => it.results).length >= 2) aiSummary(ready);
   }
 
@@ -730,7 +733,8 @@
         it.proposalSource ? el("span.muted", { text: ` · proposal from the ${it.proposalSource}` }) : null]),
       flags.length ? el("ul", {}, flags.map((f) => el("li", { text: f }))) : el("p.muted", { text: "No warnings." }),
       it.ai && it.ai.verdict && it.ai.verdict !== "good" && it.ai.verdict_reasons && it.ai.verdict_reasons.length
-        ? el("p", { style: `margin:4px 0;color:${it.ai.verdict === "bad" ? "var(--red)" : "inherit"}` }, [el("b", { text: `AI verdict: ${it.ai.verdict}` }), ` — ${it.ai.verdict_reasons.join("; ")}`]) : null,
+        ? el("p", { style: `margin:4px 0;color:${it.ai.verdict === "bad" ? "var(--red)" : "inherit"}` }, [el("b", { text: `AI verdict: ${it.ai.verdict}` }),
+          el("span", { "data-no-i18n": true, text: ` — ${it.ai.verdict_reasons.map((x) => IV.t(x)).join("; ")}` })]) : null,
       it.ai ? el("details.ai-report", {}, [el("summary", { text: `AI report (${it.ai.model})` }), el("div.agent-report", { text: it.ai.report || "(none)" })]) : null,
       el("button.btn.small.ai", { text: it.ai ? "Chat with the AI about this curve…" : "AI analysis / chat for this curve…", onclick: () => openAIFor(batch.selected) }),
       el("p.muted", { text: "Shaded on the plot: transition (left) and saturation (right) fit regions." }),

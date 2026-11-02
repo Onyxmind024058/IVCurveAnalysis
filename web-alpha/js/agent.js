@@ -36,10 +36,14 @@ The skill follows.
 --- SKILL ---
 `;
 
+  /** Language of the app's interface (the AI writes for the user in it). */
+  const uiLanguage = () => (root.IV && root.IV.i18n && root.IV.i18n.languageName()) || "English";
+  const languageLine = () => (uiLanguage() === "English" ? "" : `\nWrite everything meant for the user (report, verdict reason, chat answers) in ${uiLanguage()}; keep the symbols (Te, Vp, Vf, ne, ni, ΔVp) and units as they are.`);
+
   function userPrompt(ctx, request) {
     const probe = ctx.probe ? `${ctx.probe.diameter_mm} mm × ${ctx.probe.length_mm} mm cylindrical probe` : "cylindrical probe";
     return `Analyse the mean I–V curve of "${ctx.file || "the loaded file"}" (${probe}, ${ctx.species}, ${ctx.massAmu} amu, x axis ${ctx.xkey}).`
-      + (request ? `\nRequest from the user: ${request}` : "");
+      + (request ? `\nRequest from the user: ${request}` : "") + languageLine();
   }
 
   /** Follow-up questions about one curve (chat). */
@@ -248,7 +252,7 @@ The skill the analyses follow:
     const conn = connOf(connection);
     const messages = [
       { role: "system", content: SERIES_PREAMBLE + (skill || "") },
-      { role: "user", content: `Series of ${rows.length} curves; parameter: ${paramName}. Settings: ${settings}.`
+      { role: "user", content: `Series of ${rows.length} curves; parameter: ${paramName}. Settings: ${settings}.${languageLine()}`
         + `${request ? `\nRequest from the user: ${request}` : ""}\n\nResults (JSON, one object per file):\n${JSON.stringify(rows)}` },
     ];
     const usage = { prompt_tokens: 0, completion_tokens: 0 };

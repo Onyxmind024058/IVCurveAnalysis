@@ -824,12 +824,14 @@
   const SEEN_KEY = "ivcurve-alpha.lastSeenVersion";
 
   function showWhatsNew() {
-    const html = CHANGELOG.map((rel) =>
+    // the history stays in English (data-no-i18n); a note says so in other languages
+    const note = IV.i18n.lang === "en" ? "" : `<p class="muted" style="margin:0 0 10px">${IV.escape(IV.t("The list of changes is kept in English."))}</p>`;
+    const html = note + `<div data-no-i18n>` + CHANGELOG.map((rel) =>
       `<h3 style="font-size:15px;margin:0 0 4px">Version ${IV.escape(rel.version)}`
       + (rel.title ? ` <span class="muted" style="font-family:var(--font);font-size:12px">· ${IV.escape(rel.title)}</span>` : "")
       + `</h3><ul style="margin:0 0 14px;padding-left:18px">`
       + rel.items.map((it) => `<li style="margin:3px 0">${IV.escape(it)}</li>`).join("")
-      + "</ul>").join("");
+      + "</ul>").join("") + "</div>";
     IV.ui.message("What’s new", html);
     try { localStorage.setItem(SEEN_KEY, APP_VERSION); } catch (_) { /* ignore */ }
   }
@@ -862,6 +864,10 @@
   let mainPlot;
 
   function init() {
+    // interface language: translate the page from now on, selector next to the theme switch
+    IV.i18n.start();
+    $("themeSwitch").before(IV.i18n.selector());
+    IV.i18n.onChange(() => IV.Plot.rerenderAll());
     fillIonSpecies();
     loadSettings();
     syncIonMass();

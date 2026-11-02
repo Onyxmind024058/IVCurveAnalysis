@@ -78,7 +78,7 @@
         model.placeholder = p.custom ? "Model name as the server expects it, e.g. kimi-k2" : "";
         models.replaceChildren(...p.models.map((m) => el("option", { value: m })));
         keyHelp.innerHTML = p.keyUrl
-          ? `Create a key at <a href="${p.keyUrl}" target="_blank" rel="noopener">${IV.escape(PV.hostOf(p.keyUrl))}</a>. Stored only in this browser and sent only to ${IV.escape(PV.hostOf(p.url))}; the provider bills the requests to your account.`
+          ? `<span data-no-i18n>${IV.escape(IV.t("Create a key at:"))}</span> <a href="${p.keyUrl}" target="_blank" rel="noopener">${IV.escape(PV.hostOf(p.keyUrl))}</a>. <span data-no-i18n>${IV.escape(IV.t(`Stored only in this browser and sent only to ${PV.hostOf(p.url)}; the provider bills the requests to your account.`))}</span>`
           : "Stored only in this browser and sent only to the address above.";
       };
       sel.addEventListener("change", () => { id = sel.value; fill(); });
@@ -112,10 +112,8 @@
     const k = `${CONSENT}.${host}`;
     if (store.get(k) === "yes" || (host === "api.mistral.ai" && store.get(CONSENT) === "yes")) return true;
     const choice = await IV.ui.message(`Send this curve to ${label}?`,
-      `<p style="margin:0 0 8px">Everywhere else this app keeps your data on your computer. The AI analysis is the exception:
-       to work, it sends to <b>${IV.escape(host)}</b> the mean I–V curve (as tables of numbers produced by the app's tools),
-       the file name and the probe/gas settings, together with the skill text.</p>
-       <p style="margin:0" class="muted">The provider processes the requests under the terms of your account with it. This is asked once per provider and browser.</p>`,
+      `<p data-no-i18n style="margin:0 0 8px">${IV.escape(IV.t(`Everywhere else this app keeps your data on your computer. The AI analysis is the exception: to work, it sends to ${host} the mean I–V curve (as tables of numbers produced by the app's tools), the file name and the probe/gas settings, together with the skill text.`))}</p>
+       <p data-no-i18n style="margin:0" class="muted">${IV.escape(IV.t("The provider processes the requests under the terms of your account with it. This is asked once per provider and browser."))}</p>`,
       [{ label: "Cancel" }, { label: "Send and analyse", value: "yes", primary: true }]);
     if (choice !== "yes") return false;
     store.set(k, "yes");
@@ -431,7 +429,8 @@
           el("span.muted", { text: ` ${meta}` }),
         ]),
         verdict !== "good" && final.verdict_reasons && final.verdict_reasons.length
-          ? el("p", { style: `margin:6px 0 0;${verdict === "bad" ? "color:var(--red)" : ""}` }, [el("b", { text: verdict === "bad" ? "Bad curve: " : "Check: " }), final.verdict_reasons.join("; ")]) : null,
+          ? el("p", { style: `margin:6px 0 0;${verdict === "bad" ? "color:var(--red)" : ""}` }, [el("b", { text: verdict === "bad" ? "Bad curve: " : "Check: " }),
+            el("span", { "data-no-i18n": true, text: final.verdict_reasons.map((x) => IV.t(x)).join("; ") })]) : null,
         s.quality_flags.length ? el("ul.agent-flags", {}, s.quality_flags.map((f) => el("li", { text: f }))) : null,
         el("table.results", {}, rows.map(([k, x]) => el("tr", {}, [el("th", { text: k }), el("td", { text: x })]))),
         el("h3", { text: "Report of the agent" }),

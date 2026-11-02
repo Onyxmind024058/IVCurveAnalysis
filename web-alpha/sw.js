@@ -23,6 +23,8 @@ const APP_FILES = [
   "./manifest.webmanifest",
   "./css/basel.css",
   "./js/numerics.js",
+  "./js/i18n-dict.js",
+  "./js/i18n.js",
   "./js/ui.js",
   "./js/plot.js",
   "./js/lda.js",
