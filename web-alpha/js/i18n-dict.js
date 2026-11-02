@@ -591,5 +591,7 @@
     "· skill {0}": ["· Skill {0}","· compétence {0}","· 技能 {0}","· スキル {0}","· skill {0}","· skill {0}","· اسکل {0}"],
     "AI: {0}": ["KI: {0}","IA : {0}","AI：{0}","AI：{0}","AI: {0}","IA: {0}","AI: {0}"],
     "all": ["alle","toutes","全部","すべて","alle","todas","سب"],
+    "AI summary of the series ready — open it with “AI summary α ✓”.": ["KI-Zusammenfassung der Serie fertig — öffnen mit „KI-Zusammenfassung α ✓“.", "Synthèse IA de la série prête — ouvrez-la avec « Synthèse IA α ✓ ».", "系列的 AI 总结已完成 — 通过“AI 总结 α ✓”打开。", "シリーズの AI 要約ができました — 「AI 要約 α ✓」で開けます。", "AI-samenvatting van de reeks klaar — open haar met “AI-samenvatting α ✓”.", "Resumo da série pela IA pronto — abra-o com “Resumo da IA α ✓”.", "سیریز کا AI خلاصہ تیار ہے — اسے “AI خلاصہ α ✓” سے کھولیں۔"],
+    "Removed from the batch during the run: {0}.": ["Während des Laufs aus dem Stapel entfernt: {0}.", "Retirées du lot pendant l'exécution : {0}.", "运行期间从批次中移除：{0}。", "実行中にバッチから削除：{0}。", "Tijdens de run uit de batch verwijderd: {0}.", "Removidas do lote durante a execução: {0}.", "عمل کے دوران بیچ سے ہٹائے گئے: {0}۔"],
   };
 })(window.IV = window.IV || {});

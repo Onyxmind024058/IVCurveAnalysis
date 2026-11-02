@@ -318,19 +318,23 @@
       item.flags = [why];
     };
     render();
+    const removed = (item) => !batch.items.includes(item);  // taken out of the batch during the run
     for (const [n, item] of list.entries()) {
       if (abort.signal.aborted) { stopped = true; break; }
+      if (removed(item)) continue;
       item.status = "airunning";
       batch.aiProgress = `AI: ${n + 1} / ${list.length} — ${item.name}`;
       select(batch.items.indexOf(item));
       try {
         const ctx = IV.agentTools.makeContext(IV.app.agentInput(IV.app.curveFor(item.scans), item.name));
         const out = await IV.agent.run({ ctx, ...ready.conn, skill: ready.skill.text, signal: abort.signal });
+        if (removed(item)) { render(); continue; }
         item._aiMessages = out.messages;
         if (out.final) { applyAI(item, out.final, ready.label, area); done++; inARow = 0; }
         else { fail(item, `The agent did not submit a result within ${out.turns} steps.`); inARow++; }
       } catch (e) {
         if (e && e.name === "AbortError") { item.status = before.get(item); stopped = true; break; }
+        if (removed(item)) { render(); continue; }
         // the same error would come for every curve (key, address, network): stop; this curve is not to blame
         if (e.fatal) { item.status = before.get(item); fatal = e.message; break; }
         fail(item, e.message);
@@ -341,6 +345,7 @@
     }
     // curves the run did not reach go back to their previous status
     for (const it of list) if (it.status === "aiqueued" || it.status === "airunning") it.status = before.get(it);
+    const gone = list.filter(removed).length;
     batch.aiRun = null;
     batch.aiProgress = "";
     render();
@@ -348,12 +353,14 @@
     await IV.ui.message(stopped ? "AI pre-review stopped" : fatal ? "AI pre-review interrupted" : "AI pre-review finished",
       para(`Pre-reviewed by the AI: ${done} of ${list.length}.`)
       + (failures.length ? para(`Without result: ${failures.length}.`) : "")
-      + (list.length - done - failures.length > 0 ? para(`Not reached: ${list.length - done - failures.length}.`) : "")
+      + (list.length - done - failures.length - gone > 0 ? para(`Not reached: ${list.length - done - failures.length - gone}.`) : "")
+      + (gone ? para(`Removed from the batch during the run: ${gone}.`) : "")
       + (fatal ? `<p style="margin:0 0 8px;color:var(--red)">${IV.escape(IV.t(fatal))}</p>` : "")
       + (failures.length ? `<ul style="margin:0 0 8px;padding-left:18px">${failures.map(([name, why]) => `<li data-no-i18n><b>${IV.escape(name)}</b>: ${IV.escape(IV.t(why))}</li>`).join("")}</ul>` : "")
       + (failures.length || fatal || stopped ? para(fatal ? "Fix the problem (AI settings…), then run the pre-review again with “Only without AI result” to retry the missing curves." : "Run the pre-review again with “Only without AI result” to retry the missing curves.", "margin:0", "muted") : "")
       + (list.some((it) => it.status === "ainone") ? para("Curves marked “— AI: not analysable” are left out of the plot and the summary; confirm or overrule the verdict when you review them.", "margin:6px 0 0", "muted") : ""));
-    if (!stopped && !fatal && done > 0 && batch.items.filter((it) => it.results).length >= 2) aiSummary(ready);
+    // written in the background: no window pops up over the table; “AI summary α ✓” opens it
+    if (!stopped && !fatal && done > 0 && batch.items.filter((it) => it.results).length >= 2) aiSummary(ready, { open: false });
   }
 
   /** Table of app results for the series summary. */
@@ -378,7 +385,7 @@
     });
   }
 
-  async function aiSummary(prepared) {
+  async function aiSummary(prepared, { open = true } = {}) {
     if (!batch.items.some((it) => it.results)) { IV.ui.toast("No results to summarise yet."); return; }
     const ready = prepared || await IV.agentUI.prepare();
     if (!ready) return;
@@ -391,7 +398,8 @@
       });
       batch.aiSummary = { text: out.text, model: ready.label, at: new Date().toISOString() };
       render();
-      showSummary();
+      if (open) showSummary();
+      else IV.ui.toast("AI summary of the series ready — open it with “AI summary α ✓”.");
     } catch (e) {
       IV.ui.message("AI summary failed", IV.escape(e.message));
     } finally {
