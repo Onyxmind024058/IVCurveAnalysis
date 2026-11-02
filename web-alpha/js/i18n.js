@@ -1,5 +1,6 @@
 /* =============================================================================
-   Interface languages: English (source), German, French, Simplified Chinese.
+   Interface languages: English (source), German, French, Simplified Chinese,
+   Japanese, Dutch, Portuguese (Brazil) and Urdu (written right to left).
 
    The app is written in English; this module translates what is displayed:
    - IV.t(text): translation of one text (exact entry, or a pattern entry with
@@ -10,13 +11,16 @@
      from the English originals.
    Not translated: user data and file names, numbers, AI answers, the
    What's new history, and anything inside [data-no-i18n].
-   Translations are in i18n-dict.js (IV.I18N_DICT: English → [de, fr, zh]).
+   Translations are in i18n-dict.js (IV.I18N_DICT: English → [de, fr, zh, ja, nl, pt, ur]).
    ============================================================================= */
 (function (IV) {
   "use strict";
 
-  const LANGS = [["en", "English"], ["de", "Deutsch"], ["fr", "Français"], ["zh", "简体中文"]];
-  const COL = { de: 0, fr: 1, zh: 2 };
+  const LANGS = [["en", "English"], ["de", "Deutsch"], ["fr", "Français"], ["nl", "Nederlands"], ["pt", "Português"],
+    ["zh", "简体中文"], ["ja", "日本語"], ["ur", "اردو"]];
+  const COL = { de: 0, fr: 1, zh: 2, ja: 3, nl: 4, pt: 5, ur: 6 };
+  const RTL = new Set(["ur"]);
+  const HTML_LANG = { zh: "zh-Hans" };
   const KEY = "ivcurve.lang";
   const ATTRS = ["title", "placeholder", "aria-label", "data-tip"];
   const SKIP = "script, style, textarea, pre, code, [data-no-i18n], .js-plotly-plot, .agent-report, .chat-msg, .agent-steps, .agent-skill, td.file";
@@ -26,10 +30,8 @@
     try { saved = localStorage.getItem(KEY); } catch (_) { /* private mode */ }
     if (saved && LANGS.some(([c]) => c === saved)) return saved;
     const nav = (navigator.language || "en").toLowerCase();
-    if (nav.startsWith("de")) return "de";
-    if (nav.startsWith("fr")) return "fr";
-    if (nav.startsWith("zh")) return "zh";
-    return "en";
+    const code = nav.split("-")[0];
+    return COL[code] !== undefined ? code : "en";
   }
 
   let lang = initialLang();
@@ -142,11 +144,18 @@
     document.title = t(IV.i18n.baseTitle);
   }
 
+  /** lang and writing direction of the page (Urdu is written right to left). */
+  function applyDocLang() {
+    const html = document.documentElement;
+    html.lang = HTML_LANG[lang] || lang;
+    if (html.setAttribute) html.setAttribute("dir", RTL.has(lang) ? "rtl" : "ltr");
+  }
+
   function setLang(code) {
     if (!LANGS.some(([c]) => c === code) || code === lang) return;
     lang = code;
     try { localStorage.setItem(KEY, code); } catch (_) { /* private mode */ }
-    document.documentElement.lang = code === "zh" ? "zh-Hans" : code;
+    applyDocLang();
     build();
     retranslateAll();
     for (const fn of listeners) { try { fn(code); } catch (_) { /* keep going */ } }
@@ -156,7 +165,7 @@
 
   function start() {
     build();
-    document.documentElement.lang = lang === "zh" ? "zh-Hans" : lang;
+    applyDocLang();
     IV.i18n.baseTitle = document.title;
     document.title = t(document.title);
     translateTree(document.body);
@@ -182,8 +191,8 @@
   }
 
   /** Name of the interface language, in English (for the AI). */
-  const languageName = () => ({ en: "English", de: "German", fr: "French", zh: "Simplified Chinese" })[lang];
+  const languageName = () => ({ en: "English", de: "German", fr: "French", zh: "Simplified Chinese", ja: "Japanese", nl: "Dutch", pt: "Portuguese (Brazilian)", ur: "Urdu" })[lang];
 
-  IV.i18n = { LANGS, get lang() { return lang; }, t, setLang, start, selector, languageName, onChange: (fn) => listeners.push(fn), seen, missing, baseTitle: "" };
+  IV.i18n = { LANGS, get lang() { return lang; }, get rtl() { return RTL.has(lang); }, t, setLang, start, selector, languageName, onChange: (fn) => listeners.push(fn), seen, missing, baseTitle: "" };
   IV.t = t;
 })(window.IV = window.IV || {});
