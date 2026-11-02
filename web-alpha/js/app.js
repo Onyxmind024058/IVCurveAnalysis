@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.6.0-alpha.8";
+  const APP_VERSION = "2.6.0-alpha.9";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -652,6 +652,14 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.6.0-alpha.9",
+      title: "Japanese, Dutch, Portuguese and Urdu",
+      items: [
+        "Four more interface languages: Japanese (日本語), Dutch (Nederlands), Portuguese (Português, as written in Portugal) and Urdu (اردو). In Urdu the page is laid out right to left; graphs, numbers and file names stay left to right.",
+        "The AI writes its reports, chat answers and the series summary in these languages too.",
+      ],
+    },
     {
       version: "2.6.0-alpha.8",
       title: "German, French and Simplified Chinese",
