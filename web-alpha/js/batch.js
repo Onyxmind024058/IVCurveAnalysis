@@ -27,7 +27,14 @@
     accepted: { text: "✔ reviewed", title: "Reviewed and accepted in the manual window" },
     auto: { text: "✓ unreviewed", title: "Accepted with “Accept all good” without opening it" },
     rejected: { text: "— skipped", title: "Marked not analysable" },
+    // AI pre-review (pre-alpha)
+    aiqueued: { text: "AI … queued", title: "Waiting for the AI pre-review" },
+    airunning: { text: "AI ⏳ working", title: "The AI agent is analysing this curve" },
+    aigood: { text: "✓ AI pre-reviewed", title: "Pre-reviewed by the AI, all checks passed — still to be reviewed by a person" },
+    aicheck: { text: "⚠ AI pre-reviewed", title: "Pre-reviewed by the AI, with warnings — review carefully" },
+    aifailed: { text: "✗ AI no result", title: "The AI pre-review gave no result for this curve" },
   };
+  const AI_STATES = new Set(["aiqueued", "airunning", "aigood", "aicheck", "aifailed"]);
   const DONE = new Set(["accepted", "auto", "rejected"]);
 
   const VARIABLES = [
@@ -189,7 +196,7 @@
   }
 
   async function acceptAllGood() {
-    const good = batch.items.filter((it) => it.status === "good");
+    const good = batch.items.filter((it) => it.status === "good" || it.status === "aigood");
     if (!good.length) { IV.ui.toast("No curves with status “good” to accept."); return; }
     const ok = await IV.ui.message("Accept all good curves?",
       `<p>${good.length} curve${good.length > 1 ? "s" : ""} passed every automatic check. They will be accepted <b>without opening them</b> and marked “✓ unreviewed” in the table and the export.</p>
@@ -212,62 +219,123 @@
     item.proposalSource = `AI agent (${model})`;
     item.proposalFlags = final.flags;
     item.ai = { status: final.summary.status, report: final.report, model, at: new Date().toISOString() };
+    item._aiFinal = { ...final, model };  // kept while the page is open (shown in the AI window)
     item.error = null;
     if (!item.reviewed) {
       item.params = final.params;
       item.results = r;
       item.flags = final.flags;
-      item.status = final.flags.length ? "check" : "good";
+      item.status = final.flags.length ? "aicheck" : "aigood";
     }
+  }
+
+  /** The curve's AI result in the form the AI window shows (rebuilt from the saved regions after reopening a batch). */
+  function aiFinalOf(item) {
+    if (item._aiFinal) return item._aiFinal;
+    if (!item.ai || !item.proposal || !(item.proposalSource || "").startsWith("AI")) return null;
+    try {
+      const ctx = IV.agentTools.makeContext(IV.app.agentInput(IV.app.curveFor(item.scans), item.name));
+      const ev = IV.agentTools.evaluate(ctx, item.proposal);
+      return { params: item.proposal, results: ev.results, flags: ev.flags, summary: IV.agentTools.summary(ctx, item.proposal, ev), report: item.ai.report, model: item.ai.model };
+    } catch (_) { return null; }
+  }
+
+  /** AI window for one curve of the batch: its AI result, the chat, a new AI run. */
+  function openAIFor(index, { focusChat = true } = {}) {
+    const item = batch.items[index];
+    if (!item) { IV.ui.toast("Select a curve in the table first."); return; }
+    let input;
+    try { input = IV.app.agentInput(IV.app.curveFor(item.scans), item.name); } catch (e) { IV.ui.message("Cannot open the AI", IV.escape(e.message)); return; }
+    const area = IV.app.probeArea();
+    IV.openAgent({
+      input, title: `AI α — ${item.name}${batch.paramName ? ` · ${batch.paramName} = ${item.param || "?"}` : ""}`,
+      final: aiFinalOf(item), messages: item._aiMessages || [], focusChat,
+      onConversation: (messages) => { item._aiMessages = messages; },
+      onUse: (final) => { applyAI(item, final, final.model || IV.agentUI.connection().label, area); render(); },
+    });
   }
 
   async function aiPreReview() {
     if (batch.aiRun) { batch.aiRun.abort(); return; }
-    const todo = batch.items.filter((it) => !DONE.has(it.status) && !it.reviewed);
-    if (!todo.length) { IV.ui.toast("No curves left to pre-review: all are reviewed, accepted or skipped."); return; }
-    const ready = await IV.agentUI.prepare();
+    const open = batch.items.filter((it) => !DONE.has(it.status) && !it.reviewed);
+    if (!open.length) { IV.ui.toast("No curves left to pre-review: all are reviewed, accepted or skipped."); return; }
+    let ready = await IV.agentUI.prepare();
     if (!ready) return;
-    const flagged = todo.filter((it) => it.status !== "good");
-    const choice = await IV.ui.message("AI pre-review of the batch",
-      `<p style="margin:0 0 8px">The AI agent (<b>${IV.escape(ready.label)}</b>, skill ${IV.escape(ready.skill.name)}) analyses the curves one after the other,
-       like the single-curve AI analysis. Its regions become each curve's proposal: <b>Review next</b> then opens the curves with the AI's regions,
-       and nothing counts as reviewed until a person accepts it.</p>
-       <p style="margin:0 0 8px">About 5–10 requests per curve; at most one request per second. At the end the agent writes a short summary of the series.</p>
-       <p class="muted" style="margin:0">Curves not reviewed yet: ${todo.length} (${flagged.length} with ⚠ check or ✗ failed).</p>`,
-      [{ label: "Cancel" },
-        ...(flagged.length && flagged.length < todo.length ? [{ label: `Only ⚠ / ✗ curves (${flagged.length})`, value: "flagged" }] : []),
-        { label: `Pre-review ${todo.length} curve${todo.length > 1 ? "s" : ""}`, value: "all", primary: true }]);
-    if (choice !== "all" && choice !== "flagged") return;
-    const list = choice === "flagged" ? flagged : todo;
+    const withoutAI = open.filter((it) => !["aigood", "aicheck"].includes(it.status));
+    const flagged = open.filter((it) => !["good", "aigood"].includes(it.status));
+    const excluded = batch.items.length - open.length;
+    let choice;
+    for (;;) {
+      choice = await IV.ui.message("AI pre-review of the batch",
+        `<p style="margin:0 0 8px">AI: <b>${IV.escape(ready.label)}</b> · skill ${IV.escape(ready.skill.name)}</p>
+         <p style="margin:0 0 8px">The agent analyses the curves one after the other, like the single-curve AI analysis. Their status becomes
+         <b>✓/⚠ AI pre-reviewed</b> (or ✗ AI no result) and the AI's regions become the proposals: <b>Review next</b> opens the curves with them,
+         and nothing counts as reviewed until a person accepts it. A curve whose analysis fails is marked and the run goes on.</p>
+         <p style="margin:0 0 8px">About 5–10 requests per curve; at most one request per second. At the end you get a report and the agent writes a summary of the series.</p>
+         <p class="muted" style="margin:0">Curves not reviewed yet: ${open.length}; without an AI result: ${withoutAI.length}; with ⚠/✗: ${flagged.length}.
+         ${excluded ? `${excluded} curve${excluded > 1 ? "s are" : " is"} left out (reviewed, accepted without review, or skipped).` : ""}</p>`,
+        [{ label: "Cancel" }, { label: "AI settings…", value: "settings" },
+          ...(withoutAI.length && withoutAI.length < open.length ? [{ label: `Only without AI result (${withoutAI.length})`, value: "missing" }] : []),
+          ...(flagged.length && flagged.length < open.length ? [{ label: `Only ⚠ / ✗ (${flagged.length})`, value: "flagged" }] : []),
+          { label: `All ${open.length} not reviewed`, value: "all", primary: true }]);
+      if (choice !== "settings") break;
+      await IV.agentUI.settingsDialog();
+      ready = await IV.agentUI.prepare();
+      if (!ready) return;
+      render();
+    }
+    if (!["all", "missing", "flagged"].includes(choice)) return;
+    const list = choice === "missing" ? withoutAI : choice === "flagged" ? flagged : open;
 
     const abort = new AbortController();
     batch.aiRun = abort;
     const area = IV.app.probeArea();
-    let done = 0, failed = 0, stopped = false;
-    const progress = (text) => { batch.aiProgress = text; render(); };
-    try {
-      for (const item of list) {
-        if (abort.signal.aborted) { stopped = true; break; }
-        progress(`AI: ${done + failed + 1} / ${list.length} — ${item.name}`);
-        select(batch.items.indexOf(item));
-        let curve;
-        try { curve = IV.app.curveFor(item.scans); } catch (e) { item.ai = { status: "error", report: e.message, model: ready.label }; failed++; continue; }
-        const ctx = IV.agentTools.makeContext(IV.app.agentInput(curve, item.name));
+    const before = new Map(list.map((it) => [it, it.status]));
+    for (const it of list) it.status = "aiqueued";
+    const failures = [];
+    let done = 0, stopped = false, fatal = null, inARow = 0;
+    // a curve that already had an AI result keeps it; others are marked "no result"
+    const fail = (item, why) => {
+      failures.push([item.name, why]);
+      if (["aigood", "aicheck"].includes(before.get(item))) { item.status = before.get(item); return; }
+      item.status = "aifailed";
+      item.ai = { status: "no result", report: why, model: ready.label, at: new Date().toISOString() };
+      item.flags = [why];
+    };
+    render();
+    for (const [n, item] of list.entries()) {
+      if (abort.signal.aborted) { stopped = true; break; }
+      item.status = "airunning";
+      batch.aiProgress = `AI: ${n + 1} / ${list.length} — ${item.name}`;
+      select(batch.items.indexOf(item));
+      try {
+        const ctx = IV.agentTools.makeContext(IV.app.agentInput(IV.app.curveFor(item.scans), item.name));
         const out = await IV.agent.run({ ctx, ...ready.conn, skill: ready.skill.text, signal: abort.signal });
-        if (out.final) { applyAI(item, out.final, ready.label, area); done++; } else { item.ai = { status: "no result", report: "The agent did not submit a result.", model: ready.label }; failed++; }
-        render();
+        item._aiMessages = out.messages;
+        if (out.final) { applyAI(item, out.final, ready.label, area); done++; inARow = 0; }
+        else { fail(item, `The agent did not submit a result within ${out.turns} steps.`); inARow++; }
+      } catch (e) {
+        if (e && e.name === "AbortError") { item.status = before.get(item); stopped = true; break; }
+        // the same error would come for every curve (key, address, network): stop; this curve is not to blame
+        if (e.fatal) { item.status = before.get(item); fatal = e.message; break; }
+        fail(item, e.message);
+        inARow++;
       }
-    } catch (e) {
-      if (e && e.name === "AbortError") stopped = true;
-      else IV.ui.message("AI pre-review stopped", `<p>${IV.escape(e.message)}</p><p class="muted">Curves analysed so far keep their AI proposals.</p>`);
-      if (e && e.name !== "AbortError") failed = -1;
-    } finally {
-      batch.aiRun = null;
-      batch.aiProgress = "";
+      if (inARow >= 3) { fatal = `${inARow} curves in a row without result — stopped to save requests. Last: ${failures[failures.length - 1][1]}`; break; }
       render();
     }
-    IV.ui.toast(`AI pre-review ${stopped ? "stopped" : "finished"}: ${done} curve${done === 1 ? "" : "s"} analysed${failed > 0 ? `, ${failed} without result` : ""}.`);
-    if (!stopped && failed >= 0 && batch.items.filter((it) => it.results).length >= 2) aiSummary(ready);
+    // curves the run did not reach go back to their previous status
+    for (const it of list) if (it.status === "aiqueued" || it.status === "airunning") it.status = before.get(it);
+    batch.aiRun = null;
+    batch.aiProgress = "";
+    render();
+
+    await IV.ui.message(stopped ? "AI pre-review stopped" : fatal ? "AI pre-review interrupted" : "AI pre-review finished",
+      `<p style="margin:0 0 8px"><b>${done}</b> of ${list.length} curve${list.length > 1 ? "s" : ""} pre-reviewed by the AI${failures.length ? `, <b>${failures.length}</b> without result` : ""}${list.length - done - failures.length > 0 ? `, ${list.length - done - failures.length} not reached` : ""}.</p>
+       ${fatal ? `<p style="margin:0 0 8px;color:var(--red)">${IV.escape(fatal)}</p>` : ""}
+       ${failures.length ? `<ul style="margin:0 0 8px;padding-left:18px">${failures.map(([name, why]) => `<li><b>${IV.escape(name)}</b>: ${IV.escape(why)}</li>`).join("")}</ul>` : ""}
+       <p class="muted" style="margin:0">Run the pre-review again with “Only without AI result” to retry the missing curves${fatal ? " after fixing the problem (AI settings…)" : ""}.</p>`);
+    if (!stopped && !fatal && done > 0 && batch.items.filter((it) => it.results).length >= 2) aiSummary(ready);
   }
 
   /** Table of app results for the series summary. */
@@ -278,7 +346,8 @@
       return {
         file: it.name, param: it.param,
         status: it.status === "accepted" ? "reviewed by a person" : it.status === "rejected" ? "skipped (not analysable)"
-          : it.status === "auto" ? "accepted without review" : it.ai && it.ai.status && it.proposalSource && it.proposalSource.startsWith("AI") ? `AI only (${it.status})` : `rules only (${it.status})`,
+          : it.status === "auto" ? "accepted without review" : it.status === "aigood" ? "pre-reviewed by the AI, no warning"
+          : it.status === "aicheck" ? "pre-reviewed by the AI, with warnings" : it.status === "aifailed" ? "AI gave no result (rules proposal or none)" : `rules proposal only (${it.status})`,
         quality_flags: it.flags || [],
         Te_eV: r3(r.Te_eV), Te_VpVf_OML_eV: r3(r.Te_VpVf_OML_eV), Te_VpVf_planar_eV: r3(r.Te_VpVf_planar_eV),
         ne_m3: r3(r.ne_m3), ni_m3: r3(r.ni_m3), ni_over_ne: r3(r.ni_m3 / r.ne_m3),
@@ -448,13 +517,17 @@
     aiBtn.title = "The AI agent analyses every curve not yet reviewed; its regions become the proposals you review";
     const aiSumBtn = btn("AI summary α", () => (batch.aiSummary ? showSummary() : aiSummary()), ".ai");
     aiSumBtn.title = "Summary of the series written by the AI agent from the table of results";
+    const aiChatBtn = btn("AI chat α…", () => openAIFor(batch.selected), ".ai");
+    aiChatBtn.title = "Open the AI window for the selected curve: its AI result, a chat about it, or a new AI analysis";
+    const aiSetBtn = btn("AI settings…", async () => { await IV.agentUI.settingsDialog(); render(); }, ".ai");
+    aiSetBtn.title = "AI provider, model and API key";
     const controls = el("div.controls", { style: "border-top:none;border-bottom:1px solid var(--border)" }, [
       btn("Add files…", () => fileInput.click()), fileInput,
       reviewBtn,
       btn("Accept all good…", acceptAllGood),
       btn("Re-propose unreviewed", () => { for (const it of batch.items) if (!it.reviewed) analyse(it); render(); IV.ui.toast("Proposals updated with the current settings."); }),
       el("span.sep-v"),
-      aiBtn, aiSumBtn,
+      aiBtn, aiChatBtn, aiSumBtn, aiSetBtn,
       el("span.sep-v"),
       el("div.field", {}, [el("label", { text: "Parameter name:" }), paramName]),
       el("div.field", {}, [el("label", { text: "Start review from:" }), startFrom]),
@@ -494,7 +567,7 @@
     d.dlg.addEventListener("dragover", (e) => { e.preventDefault(); e.stopPropagation(); });
     d.dlg.addEventListener("drop", (e) => { e.preventDefault(); e.stopPropagation(); addFiles(e.dataTransfer.files); });
 
-    ui = { d, tbody, table, empty, settings, summary, preview, detail, reviewBtn, paramName, startFrom, aiBtn, aiSumBtn };
+    ui = { d, tbody, table, empty, settings, summary, preview, detail, reviewBtn, paramName, startFrom, aiBtn, aiSumBtn, aiChatBtn };
     render();
   }
 
@@ -509,10 +582,13 @@
     // a reopened batch brings its own parameter name and review mode
     if (document.activeElement !== ui.paramName) ui.paramName.value = batch.paramName;
     ui.startFrom.value = batch.startFrom;
-    settings.textContent = `Settings from the main window: ${IV.app.settingsSummary()}${batch.aiProgress ? ` · ${batch.aiProgress}` : ""}`;
+    settings.textContent = `Settings from the main window: ${IV.app.settingsSummary()} · AI: ${IV.agentUI.connection().label}${batch.aiProgress ? ` · ${batch.aiProgress}` : ""}`;
     ui.aiBtn.textContent = batch.aiRun ? "Stop AI" : "AI pre-review α…";
     ui.aiSumBtn.textContent = batch.aiSummary ? "AI summary α ✓" : "AI summary α";
     ui.aiSumBtn.disabled = !!batch.aiRun;
+    ui.aiChatBtn.disabled = !batch.items[batch.selected];
+    const ai = IV.agentUI.connection();
+    ui.settings.title = `AI: ${ai.label}${IV.agentUI.missing(ai) ? ` (${IV.agentUI.missing(ai)} not set)` : ""}`;
     const has = batch.items.length > 0;
     empty.classList.toggle("hidden", has);
     table.classList.toggle("hidden", !has);
@@ -540,7 +616,7 @@
         el("td.file", { text: it.name, title: it.name }),
         el("td", {}, [param]),
         el("td", {}, [el(`span.status.${it.status}`, { text: st.text, title: it.flags && it.flags.length ? it.flags.join("\n") : st.title }),
-          it.proposalSource && it.proposalSource.startsWith("AI") ? el("span.ai-tag", { text: "AI", title: `Proposal from the ${it.proposalSource}` }) : null]),
+          !AI_STATES.has(it.status) && it.proposalSource && it.proposalSource.startsWith("AI") ? el("span.ai-tag", { text: "AI", title: `Proposal from the ${it.proposalSource}` }) : null]),
         el("td", { text: fmtG(r.Te_eV, 4) }),
         el("td", { text: fmtE(r.ne_m3, 2) }),
         el("td", { text: fmtG(r.ni_m3 / r.ne_m3, 3) }),
@@ -610,6 +686,7 @@
         it.proposalSource ? el("span.muted", { text: ` · proposal from the ${it.proposalSource}` }) : null]),
       flags.length ? el("ul", {}, flags.map((f) => el("li", { text: f }))) : el("p.muted", { text: "No warnings." }),
       it.ai ? el("details.ai-report", {}, [el("summary", { text: `AI report (${it.ai.model})` }), el("div.agent-report", { text: it.ai.report || "(none)" })]) : null,
+      el("button.btn.small.ai", { text: it.ai ? "Chat with the AI about this curve…" : "AI analysis / chat for this curve…", onclick: () => openAIFor(batch.selected) }),
       el("p.muted", { text: "Shaded on the plot: transition (left) and saturation (right) fit regions." }),
     );
   }

@@ -181,13 +181,23 @@
 
   let ui = null;
 
-  function openAgent() {
+  /**
+   * The AI window. Without options it works on the main window's mean curve.
+   * From the batch review: opts.input (agent input of one curve), opts.title,
+   * opts.final / opts.messages (its AI pre-review, to show and to continue in
+   * the chat), opts.onUse(final) (button "Use as this curve's AI proposal"),
+   * opts.onConversation(messages) (keeps the conversation with the curve) and
+   * opts.focusChat.
+   */
+  function openAgent(opts = {}) {
     if (ui) return;
+    const getCurve = () => opts.input || IV.app.agentCurve();
     let curve;
-    try { curve = IV.app.agentCurve(); } catch (e) { IV.ui.message("No data", IV.escape(e.message)); return; }
-    const d = IV.ui.openDialog({ title: "AI analysis α — AI agent (pre-alpha)", onClose: () => { if (ui && ui.abort) ui.abort.abort(); ui = null; } });
+    try { curve = getCurve(); } catch (e) { IV.ui.message("No data", IV.escape(e.message)); return; }
+    const d = IV.ui.openDialog({ title: opts.title || "AI analysis α — AI agent (pre-alpha)", onClose: () => { if (ui && ui.abort) ui.abort.abort(); ui = null; } });
     d.dlg.classList.add("agent");
     ui = { d, abort: null, last: null, ctx: null, messages: [] };
+    const keep = (messages) => { if (ui) ui.messages = messages; if (opts.onConversation) opts.onConversation(messages); };
 
     // --- side: settings and run --------------------------------------------
     const keyLine = el("div.agent-provider");
@@ -286,7 +296,7 @@
       paintKey();
       if (!ready) return;
       const skill = ready.skill;
-      try { curve = IV.app.agentCurve(); } catch (e) { IV.ui.message("No data", IV.escape(e.message)); return; }
+      try { curve = getCurve(); } catch (e) { IV.ui.message("No data", IV.escape(e.message)); return; }
       steps.replaceChildren();
       resultBox.replaceChildren(el("div.empty-state", { text: "The agent is working…" }));
       busy(true);
@@ -303,7 +313,7 @@
           ctx, ...ready.conn, skill: skill.text, request: request.value.trim(),
           onEvent, signal: ui.abort.signal,
         });
-        if (ui) ui.messages = out.messages;
+        keep(out.messages);
         const meta = `${out.turns} steps · ${Math.round((Date.now() - started) / 1000)} s · ${out.usage.prompt_tokens + out.usage.completion_tokens} tokens · ${ready.label}`;
         if (out.final) showResult(out.final, meta, skill.name);
         else resultBox.replaceChildren(el("div.empty-state", { text: "The agent did not submit a result. Run it again, or try another model." }));
@@ -335,7 +345,7 @@
       paintKey();
       if (!ready) return;
       if (!ui.ctx) {
-        try { ui.ctx = IV.agentTools.makeContext(IV.app.agentCurve()); } catch (e) { IV.ui.message("No data", IV.escape(e.message)); return; }
+        try { ui.ctx = IV.agentTools.makeContext(getCurve()); } catch (e) { IV.ui.message("No data", IV.escape(e.message)); return; }
       }
       chatInput.value = "";
       chatLine("user", text);
@@ -350,7 +360,7 @@
         });
         waiting.remove();
         if (!ui) return;
-        ui.messages = out.messages;
+        keep(out.messages);
         chatLine("ai", out.reply || "(no answer)");
         if (out.final) {
           showResult(out.final, `updated from the chat · ${ready.label}`, ready.skill.name);
@@ -401,15 +411,28 @@
         el("h3", { text: "Report of the agent" }),
         el("div.agent-report", { text: final.report || "(no report)" }),
         el("p.muted", { style: "font-size:12px;margin:6px 0 0", text: "The numbers above are computed by the app for the agent's regions; the report is the agent's own text." }),
-        el("div.agent-row", { style: "margin-top:10px" }, [
+        el("div.agent-row", { style: "margin-top:10px" }, opts.onUse ? [
+          el("button.btn.primary", { text: "Use as this curve's AI proposal", onclick: () => { opts.onUse(final); IV.ui.toast("The batch uses these regions as the curve's AI proposal."); } }),
+          el("button.btn", { text: "Copy report", onclick: () => navigator.clipboard.writeText(reportText()).then(() => IV.ui.toast("Report copied.")) }),
+        ] : [
           el("button.btn.primary", { text: "Open in manual OML to check…", onclick: () => IV.app.openManualWith(final.params) }),
           el("button.btn", { text: "Show in main window", onclick: () => { IV.app.useAgentResult(JSON.parse(JSON.stringify(r))); IV.ui.toast("Result added to the main window (marked as not reviewed)."); } }),
           el("button.btn", { text: "Copy report", onclick: () => navigator.clipboard.writeText(reportText()).then(() => IV.ui.toast("Report copied.")) }),
         ]),
       ].filter(Boolean));
     }
+
+    if (opts.final) {
+      try {
+        ui.ctx = IV.agentTools.makeContext(curve);
+        ui.messages = opts.messages || [];
+        showResult(opts.final, `AI pre-review${opts.final.model ? ` · ${opts.final.model}` : ""}`, customSkill() ? customSkill().name : BUILTIN_SKILL);
+        resetChatLog(ui.messages.length ? "The chat continues from the AI pre-review of this curve." : "Ask about this curve and its AI proposal.");
+      } catch (_) { /* the window still works without it */ }
+    }
+    if (opts.focusChat) { chatBox.scrollIntoView({ block: "nearest" }); chatInput.focus(); }
   }
 
   IV.openAgent = openAgent;
-  IV.agentUI = { prepare, connection, describeCall, describeResult };
+  IV.agentUI = { prepare, connection, missing, settingsDialog, describeCall, describeResult };
 })(window.IV = window.IV || {});

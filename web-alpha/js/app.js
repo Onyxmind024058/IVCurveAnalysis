@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.6.0-alpha.4";
+  const APP_VERSION = "2.6.0-alpha.5";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -652,6 +652,17 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.6.0-alpha.5",
+      title: "AI in the batch review",
+      items: [
+        "New statuses for the AI pre-review: “AI … queued”, “AI ⏳ working”, “✓ AI pre-reviewed”, “⚠ AI pre-reviewed” and “✗ AI no result”, so it is visible which curves the AI has done.",
+        "The pre-review no longer stops at the first problem: a curve whose analysis fails is marked “✗ AI no result” with the reason and the run goes on (it stops only for problems that would hit every curve — wrong key, unreachable server — or after 3 failures in a row). A report at the end lists every curve without result; “Only without AI result” retries them.",
+        "AI settings… in the batch window (provider, model, key); the AI in use is shown in the settings line and in the pre-review window.",
+        "AI chat α… in the batch window and under the selected curve: the AI window for that curve, with its AI result and a chat that continues the pre-review; “Use as this curve's AI proposal” takes regions changed in the chat over into the batch.",
+        "“Accept all good” also accepts curves with “✓ AI pre-reviewed” (marked as not reviewed by a person).",
+      ],
+    },
     {
       version: "2.6.0-alpha.4",
       title: "Save as",

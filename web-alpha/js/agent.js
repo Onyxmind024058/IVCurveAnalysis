@@ -67,7 +67,10 @@ The skill the analyses follow:
 --- SKILL ---
 `;
 
-  class AgentError extends Error {}
+  /** fatal: the same error would happen for every request (key, address, network), so a batch stops. */
+  class AgentError extends Error {
+    constructor(message, { fatal = false } = {}) { super(message); this.fatal = fatal; }
+  }
 
   /**
    * Request pacing: free tiers (e.g. Mistral's) allow about one request per second.
@@ -89,7 +92,7 @@ The skill the analyses follow:
   async function chat({ conn, messages, tools = T.TOOL_DEFS, toolChoice = "required", fetchImpl, signal }) {
     const prov = P.byId(conn.provider);
     let req;
-    try { req = P.buildRequest(conn, { messages, tools, toolChoice }); } catch (e) { throw new AgentError(e.message); }
+    try { req = P.buildRequest(conn, { messages, tools, toolChoice }); } catch (e) { throw new AgentError(e.message, { fatal: true }); }
     const name = prov.custom ? P.hostOf(req.url) : prov.label;
     for (let attempt = 0; ; attempt++) {
       await sleep(lastRequestAt + pacing.minIntervalMs - Date.now(), signal);
@@ -99,7 +102,7 @@ The skill the analyses follow:
         res = await fetchImpl(req.url, { method: "POST", headers: req.headers, body: JSON.stringify(req.body), signal });
       } catch (e) {
         if (e && e.name === "AbortError") throw e;
-        throw new AgentError(`Could not reach ${P.hostOf(req.url)} (offline, a wrong address, or the request was blocked by the browser or a network filter — some servers do not accept requests from web pages).`);
+        throw new AgentError(`Could not reach ${P.hostOf(req.url)} (offline, a wrong address, or the request was blocked by the browser or a network filter — some servers do not accept requests from web pages).`, { fatal: true });
       }
       if (res.ok) {
         let out;
@@ -113,7 +116,7 @@ The skill the analyses follow:
       }
       let detail = "";
       try { detail = P.errorDetail(await res.json()); } catch (_) { /* no JSON */ }
-      if (res.status === 401 || res.status === 403) throw new AgentError(`${name} rejected the API key (${res.status}). Check it under “API key…”.${detail ? ` (${detail})` : ""}`);
+      if (res.status === 401 || res.status === 403) throw new AgentError(`${name} rejected the API key (${res.status}). Check it under “Provider & key…”.${detail ? ` (${detail})` : ""}`, { fatal: true });
       if (res.status === 429) throw new AgentError(`${name} rate limit or quota reached (429), also after waiting. Wait a minute or check your plan.`);
       throw new AgentError(`${name} error ${res.status}${detail ? `: ${detail}` : ""}`);
     }
@@ -122,7 +125,7 @@ The skill the analyses follow:
   /** Connection settings from the options of run / converse / summarizeSeries. */
   function connOf({ provider = "mistral", apiKey, model, endpoint, address }) {
     const prov = P.byId(provider);
-    if (!apiKey && !prov.optionalKey) throw new AgentError(`No API key set for ${prov.label}.`);
+    if (!apiKey && !prov.optionalKey) throw new AgentError(`No API key set for ${prov.label}.`, { fatal: true });
     return { provider: prov.id, apiKey, model: model || prov.models[0], endpoint, address };
   }
 
@@ -159,8 +162,8 @@ The skill the analyses follow:
       const text = textOf(msg.content);
       if (text) onEvent({ type: "text", text });
       if (!calls.length) {
-        if (++nudges > 2) break;
-        messages.push({ role: "user", content: "Continue with the tools and finish with submit_result." });
+        if (++nudges > 4) break;
+        messages.push({ role: "user", content: "Do not answer in text yet: call the tools now (get_curve_overview, propose_regions, evaluate_regions, inspect_window) and finish by calling submit_result with your regions and report." });
         continue;
       }
       final = runTools(ctx, calls, messages, onEvent) || final;
