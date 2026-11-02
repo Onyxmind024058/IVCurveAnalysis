@@ -4,7 +4,10 @@ Langmuir probe I-V analysis pipeline with plotting.
 Usage: python langmuir_pipeline.py <file> [<file>...] [--plots DIR] [--npz DIR] [--mass AMU] [--area MM2]
 Accepts Impedans-style <Experiment> XML (one or more DataItem blocks) or
 CSV/TSV files with V,I columns (units auto-detected: A, mA or uA).
-Prints one JSON result block per trace to stdout (array "results").
+Prints one JSON result block per trace to stdout (array "results"). Every trace
+first goes through an analysability check (check_analysable); a trace that is
+not analysable gets {"analysable": false, "status": "not_analysable", "reasons": [...]}
+and no fit results.
 
 Options:
   --plots DIR  save one 3-panel PNG per trace into DIR (I-V + semilog fits + EEDF)
@@ -156,6 +159,123 @@ def line_fit(x, y):
     return float(m), float(b), (1 - ss_res / ss_tot) if ss_tot > 0 else 0.0
 
 
+def floating_potential(V, I, step):
+    """Vf: the last rise of the smoothed current through zero (noise on the ion
+    branch can cross zero many times; the electron side is the last rise).
+    Returns None if the current never rises through zero."""
+    win = max(11, int(round(1.0 / step)) | 1)
+    win = min(win, len(I) - 1 if (len(I) - 1) % 2 else len(I) - 2)
+    Is = savgol_filter(I, win, 3)
+    ii = np.where((Is[:-1] < 0) & (Is[1:] >= 0))[0]
+    if len(ii) == 0:
+        return None
+    i0 = ii[-1]
+    return float(np.interp(0.0, Is[i0:i0 + 2], V[i0:i0 + 2]))
+
+
+def check_analysable(V, I):
+    """Is the curve analysable at all? Measured before any fit, with margin:
+    hard reasons (no floating potential, electron signal drowned in noise even
+    after smoothing, almost no exponential part) make it "not_analysable";
+    softer ones (noisy, short transition, knee at the end of the sweep, flat top,
+    spikes) make it "doubtful": analyse it anyway and flag it."""
+    V = np.asarray(V, float); I = np.asarray(I, float)
+    n = len(V); hard, soft = [], []
+    if n < 30:
+        hard.append("only %d points" % n)
+        return dict(verdict="not_analysable", hard_reasons=hard, soft_reasons=soft, metrics={})
+    step = float(np.median(np.diff(V)))
+    win = max(11, int(round(1.0 / step)) | 1)
+    win = min(win, n - 1 if (n - 1) % 2 else n - 2)
+    Is = savgol_filter(I, win, 3)
+    # noise per point from second differences (insensitive to the curve's shape), robust (MAD)
+    d2 = I[1:-1] - (I[:-2] + I[2:]) / 2.0
+    med = float(np.median(d2))
+    noise = max(1.4826 * float(np.median(np.abs(d2 - med))) / np.sqrt(1.5), 1e-15)
+    from scipy.signal import savgol_coeffs
+    noise_s = noise * float(np.sqrt(np.sum(savgol_coeffs(win, 3) ** 2)))  # what the analysis sees after smoothing
+    sn, sn_raw = float(Is.max()) / noise_s, float(Is.max()) / noise
+    Vf = floating_potential(V, I, step)
+    if Vf is None:
+        hard.append("the current never becomes positive (no electron current, no floating potential)" if Is.max() <= 0
+                    else "the current never becomes negative (no ion branch, no floating potential)" if Is.min() >= 0
+                    else "no floating potential (no zero crossing)")
+    if sn < 5:
+        hard.append("electron current is only %.2g x the noise even after smoothing" % sn)
+    elif sn_raw < 30:
+        soft.append("noisy: electron current is %.2g x the noise of a single point" % sn_raw)
+    trans_pts, knee = 0, None
+    if Vf is not None:
+        dI = savgol_filter(I, win, 3, deriv=1, delta=step)
+        idx = np.where(V > Vf)[0]
+        if len(idx):
+            k = int(idx[np.argmax(dI[idx])])
+            knee = float(V[k])
+            trans_pts = int(np.sum((V > Vf) & (V < V[k]) & (Is > 3 * noise_s)))
+            if V[k] > V[-1] - 0.03 * (V[-1] - V[0]):
+                soft.append("the knee (Vp) is at the end of the sweep: no electron saturation measured")
+        if trans_pts < 5:
+            hard.append("only %d points of the exponential (transition) part above the noise" % trans_pts)
+        elif trans_pts < 15:
+            soft.append("short transition region (%d points)" % trans_pts)
+    top = 0
+    for j in range(n - 1, -1, -1):
+        if abs(I[j] - I.max()) <= 1e-9 * abs(I.max()) + 1e-18:
+            top += 1
+        else:
+            break
+    if top >= max(5, 0.02 * n):
+        soft.append("the current is flat at its maximum for the last %d points (amplifier limit?)" % top)
+    spikes = int(np.sum(np.abs(d2 - med) > 8 * np.sqrt(1.5) * noise))
+    if spikes > 0.02 * n:
+        soft.append("%d spikes far above the noise" % spikes)
+    verdict = "not_analysable" if hard else ("doubtful" if soft else "analysable")
+    return dict(verdict=verdict, hard_reasons=hard, soft_reasons=soft,
+                metrics=dict(noise_per_point_A=noise, electron_signal_to_noise_smoothed=sn,
+                             electron_signal_to_noise_per_point=sn_raw,
+                             transition_points_above_noise=trans_pts, Vf_V=Vf, knee_V=knee))
+
+
+def safe_analyse(V, I, A, mass_amu=39.95):
+    """analyse() behind the analysability check, with margin: a curve that the
+    pre-check calls not analysable is still tried (unless it has no floating
+    potential) and kept if its transition is clearly exponential (R^2 >= 0.98).
+    Returns (results, arrays); arrays is None for a curve that is not analysable."""
+    pre = check_analysable(V, I)
+    no_vf = any("floating potential" in h for h in pre["hard_reasons"])
+
+    def rejected(extra=None):
+        reasons = pre["hard_reasons"] + ([extra] if extra else [])
+        return dict(analysable=False, status="not_analysable", reasons=reasons or ["analysis failed"],
+                    analysability=pre), None
+
+    if no_vf:
+        return rejected()
+    try:
+        res, arr = analyse(V, I, A, mass_amu)
+    except Exception as e:  # noqa: BLE001 - any failure of the fits means: not analysable as is
+        return rejected("analysis failed: %s" % e)
+    # sanity of the result itself: a Te at the fit limit, or (on a doubtful curve) a transition
+    # that is not clearly exponential, means the numbers would be wrong rather than uncertain
+    if not (0.3 * 1.001 < res["Te_single_eV"] < 8.0 * 0.999):
+        return rejected("the electron-temperature fit did not converge (Te = %.2f eV, at the fit limit)" % res["Te_single_eV"])
+    r2 = res.get("r2_transition")
+    if pre["verdict"] != "analysable" and (r2 is None or r2 < 0.9):
+        return rejected("the transition is not exponential enough to trust the fit (R2 = %s)" % ("%.3f" % r2 if r2 is not None else "n/a"))
+    res["analysable"] = True
+    res["analysability"] = pre
+    if pre["verdict"] == "not_analysable":
+        if res.get("r2_transition") is not None and res["r2_transition"] >= 0.98:
+            res["analysability"] = dict(pre, verdict="doubtful",
+                                        note="pre-check said not analysable, but the transition is exponential (R2 = %.3f)" % res["r2_transition"])
+            res["quality_flags"].append("analysed despite the pre-check: " + "; ".join(pre["hard_reasons"]))
+            res["status"] = "check"
+        else:
+            return rejected("no clean exponential transition (R2 = %s)" % (
+                "%.3f" % res["r2_transition"] if res.get("r2_transition") is not None else "n/a"))
+    return res, arr
+
+
 def maxwell_eedf(E, ne, Te):
     """EEDF (per eV) of a Maxwellian in m^-3 eV^-1."""
     return ne * 2.0 / np.sqrt(np.pi) / Te ** 1.5 * np.sqrt(E) * np.exp(-E / Te)
@@ -165,12 +285,10 @@ def analyse(V, I, A, mass_amu=39.95, minTe=0.3, maxTe=8.0):
     """Returns (results_dict, arrays_dict)."""
     step = float(np.median(np.diff(V)))
 
-    # 1. floating potential
-    ii = np.where(np.diff(np.sign(I)) != 0)[0]
-    if len(ii) == 0:
+    # 1. floating potential (on the smoothed current, so ion-branch noise does not fake a crossing)
+    Vf = floating_potential(V, I, step)
+    if Vf is None:
         raise ValueError("No I=0 crossing found")
-    i0 = ii[0]
-    Vf = float(np.interp(0.0, I[i0:i0 + 2], V[i0:i0 + 2]))
 
     # 2. noise from ion branch
     m_ion = V <= Vf - 8
@@ -467,30 +585,30 @@ def main():
                 raise ValueError("No probe area in XML; supply A manually")
             base = os.path.splitext(os.path.basename(path))[0]
             for tr in traces:
-                r, arr = analyse(tr["V"], tr["I"], A, mass or params["molecular_weight"])
+                r, arr = safe_analyse(tr["V"], tr["I"], A, mass or params["molecular_weight"])
                 r["file"] = os.path.basename(path); r["zpos_mm"] = tr["zpos"]
                 r["probe_area_mm2"] = A * 1e6; r["gas"] = params["gas"]
                 tag = "%s_z%.1f" % (base, tr["zpos"])
-                if plots_dir:
+                if plots_dir and arr is not None:
                     r["plot"] = plot_trace(arr, r, os.path.join(plots_dir, tag + ".png"),
                                            title=tag)
-                if npz_dir:
+                if npz_dir and arr is not None:
                     np.savez(os.path.join(npz_dir, tag + ".npz"), **arr)
                 results.append(r)
         else:
             V, I = parse_csv(path)
             A = area_mm2 * 1e-6 if area_mm2 is not None else 4.73e-6
-            r, arr = analyse(V, I, A, mass or 39.95)
+            r, arr = safe_analyse(V, I, A, mass or 39.95)
             base = os.path.splitext(os.path.basename(path))[0]
             r["file"] = os.path.basename(path); r["probe_area_mm2"] = A * 1e6
             if area_mm2 is None:
                 r["note"] = "CSV input: probe area assumed 4.73 mm2 - confirm with user"
             if mass is None:
                 r["note_mass"] = "CSV input: argon (39.95 amu) assumed - confirm the gas with user"
-            if plots_dir:
+            if plots_dir and arr is not None:
                 r["plot"] = plot_trace(arr, r, os.path.join(plots_dir, base + ".png"),
                                        title=base)
-            if npz_dir:
+            if npz_dir and arr is not None:
                 np.savez(os.path.join(npz_dir, base + ".npz"), **arr)
             results.append(r)
     print(json.dumps({"results": results}, indent=1, default=float))

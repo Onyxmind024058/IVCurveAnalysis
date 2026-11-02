@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.6.0-alpha.5";
+  const APP_VERSION = "2.6.0-alpha.6";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -652,6 +652,16 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.6.0-alpha.6",
+      title: "AI: is the curve analysable?",
+      items: [
+        "The AI first checks whether a curve is analysable at all (no floating potential, electron current drowned in noise, almost no exponential part). The app measures it for the agent: noise, signal-to-noise after smoothing, points of the exponential part above the noise, knee at the end of the sweep, flat top, spikes.",
+        "With margin: borderline curves (noisy, short transition, failed automatic proposal) are analysed and flagged, not rejected. Only when the attempts confirm it does the AI answer “not analysable”, with the reasons and no results.",
+        "Batch review: new status “— AI: not analysable”; these curves are left out of the summary plot and the AI summary, and a person confirms the verdict when reviewing them (or analyses them anyway).",
+        "The skill and its Python pipeline do the same (check_analysable / safe_analyse); the pipeline now finds Vf on the smoothed current, so noisy curves no longer fail.",
+      ],
+    },
     {
       version: "2.6.0-alpha.5",
       title: "AI in the batch review",

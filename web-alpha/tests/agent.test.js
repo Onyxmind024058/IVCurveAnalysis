@@ -104,7 +104,7 @@ test("agent loop: tools, final result from the app, message format", async () =>
   assert.equal(seen[0].auth, "Bearer k-123");
   assert.equal(seen[0].body.model, "mistral-large-latest");
   assert.equal(seen[0].body.tool_choice, "any");
-  assert.deepEqual(seen[0].body.tools.map((t) => t.function.name), ["get_curve_overview", "propose_regions", "evaluate_regions", "inspect_window", "submit_result"]);
+  assert.deepEqual(seen[0].body.tools.map((t) => t.function.name), ["get_curve_overview", "propose_regions", "evaluate_regions", "inspect_window", "submit_not_analysable", "submit_result"]);
   assert.match(seen[0].body.messages[0].content, /--- SKILL ---\nSKILL TEXT$/);
   // each tool call is answered with a tool message carrying its id
   const second = seen[1].body.messages;
@@ -209,4 +209,31 @@ test("RF compensation: a rounded knee (RF ripple ≈ Te) is reported, a sharp on
   assert.ok(rf.rf_check.knee_rounding_over_Te > clean.rf_check.knee_rounding_over_Te + 0.5);
   assert.ok(rf.quality_flags.some((f) => /RF compensation looks poor/.test(f)));
   assert.equal(rf.status, "check");
+});
+
+test("analysability: clear failures are 'likely not analysable', borderline curves 'doubtful — try'", () => {
+  const V = N.linspace(-60, 20, 800);
+  let s = 7;
+  const g = () => { let t = 0; for (let k = 0; k < 12; k++) { s = (s * 1664525 + 1013904223) % 4294967296; t += s / 4294967296; } return t - 6; };
+  const make = (noise, shift = 0) => { const c = curve({ sigma: 0 }); return c.I.map((x) => x + noise * g() + shift); };
+  const verdict = (I) => T.call(T.makeContext({ V, I, area: AREA, massAmu: AR }), "get_curve_overview").content.analysability;
+  assert.equal(verdict(make(2e-6)).verdict, "analysable");
+  assert.equal(verdict(make(2e-4)).verdict, "doubtful — try, then flag", "noisy but usable curves are tried, not rejected");
+  const noiseOnly = verdict(V.map(() => 2e-6 * g()));
+  assert.equal(noiseOnly.verdict, "likely not analysable");
+  const allPositive = verdict(make(2e-6, 1e-3));
+  assert.equal(allPositive.verdict, "likely not analysable");
+  assert.match(allPositive.hard_reasons.join(), /never becomes negative/);
+});
+
+test("submit_not_analysable ends the run without results", async () => {
+  const fetchImpl = fakeMistral([
+    { calls: [["get_curve_overview", {}]] },
+    { calls: [["submit_not_analysable", { reason: "pure noise", report: "No electron current above the noise." }]] },
+  ], []);
+  const out = await Agent.run({ ctx: context(), apiKey: "k", fetchImpl });
+  assert.equal(out.final.analysable, false);
+  assert.equal(out.final.reason, "pure noise");
+  assert.equal(out.final.results, null);
+  assert.ok(out.final.summary.analysability.verdict);
 });

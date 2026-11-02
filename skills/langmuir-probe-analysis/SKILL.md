@@ -2,7 +2,7 @@
 name: |
   langmuir-probe-analysis
 description: |
-  Load this skill when the user asks to analyse Langmuir probe I-V curves, traces, or characteristics (single or batch), e.g. Impedans-style XML or .lda experiment files (.lda files are XML content with a different extension; the pipeline detects this by content), or when they mention plasma potential, floating potential, electron temperature, EEDF, or plasma density from probe data. Runs a validated Python pipeline with Vf, Vp (dI/dV peak and fit intersection, with the Vp check in volts), ion-current model and OML ion density, single vs two-temperature Maxwellian fits, Te cross-check from Vp − Vf, Druyvesteyn EEDF, density cross-checks, an RF compensation check, quality flags, and fit/EEDF plots.
+  Load this skill when the user asks to analyse Langmuir probe I-V curves, traces, or characteristics (single or batch), e.g. Impedans-style XML or .lda experiment files (.lda files are XML content with a different extension; the pipeline detects this by content), or when they mention plasma potential, floating potential, electron temperature, EEDF, or plasma density from probe data. Runs a validated Python pipeline with Vf, Vp (dI/dV peak and fit intersection, with the Vp check in volts), ion-current model and OML ion density, single vs two-temperature Maxwellian fits, Te cross-check from Vp − Vf, Druyvesteyn EEDF, density cross-checks, an RF compensation check, quality flags, and fit/EEDF plots. Checks first whether each curve is analysable at all.
 ---
 
 # Langmuir Probe I–V Analysis
@@ -23,6 +23,8 @@ Analyse Langmuir probe traces with the pipeline in `langmuir_pipeline.py` (this 
 
 ## Outputs
 
+- **Not analysable traces**: `{"analysable": false, "status": "not_analysable", "reasons": [...], "analysability": {...}}` and no fit results. Every other trace has `"analysable": true` and the fields below, plus `analysability` (`verdict`: `analysable` / `doubtful`, `hard_reasons`, `soft_reasons`, `metrics`: noise per point, electron signal-to-noise after smoothing, points of the exponential part above the noise, Vf, knee).
+
 - **stdout JSON**: all fit parameters and diagnostics per trace, among them
   - potentials: `Vf_V`, `Vp_V` (= `Vp_dIdV_V`), `Vp_intersection_V`, `Vp_difference_V`, `Vp_check` (`good` / `ok` / `review` / `not_checked`), `Vp_check_reason`;
   - temperatures: `Te_single_eV`, `two_T` {Tc_eV, Th_eV, nh_over_ne, ne_m3, chi2_dof}, `Te_VpVf_OML_eV`, `Te_VpVf_planar_eV`, `Te_check_ok`, `dVf_consistent`;
@@ -35,6 +37,16 @@ Analyse Langmuir probe traces with the pipeline in `langmuir_pipeline.py` (this 
 - **`--npz DIR`**: per-trace arrays (V, I, Ii_model, Ie, sel_V, sel_Ie, fit curves, eedf_E, eedf_f, Maxwellian overlays, noise floor) for building inline charts.
 
 ## Pipeline (what the script does, and why)
+
+0. **Is the curve analysable? — check this first, with margin.** Before analysing, decide whether the trace can give meaningful results at all. The script measures it (`check_analysable`, run by `safe_analyse` on every trace):
+   - **Hard reasons** (point towards *not analysable*):
+     - no floating potential: the smoothed current never rises through zero (no electron current, no ion branch, or an offset that keeps it on one side);
+     - the electron current is drowned in noise: below ~5× the noise even after smoothing;
+     - almost no exponential part: fewer than ~5 points of the transition between Vf and the knee clearly above the noise;
+     - fewer than ~30 points in the trace.
+   - **Soft reasons** (*doubtful*, analyse anyway and flag): noisy but with a visible trend (electron current below ~30× the noise of a single point), a short transition (5–15 points), the knee at the end of the sweep (no saturation measured), a flat top (amplifier limit), spikes, a failed automatic proposal.
+   - **Margin — do not reject too early.** Some curves look unanalysable at first sight but are not: noisy curves, short sweeps, odd ion branches, a failed automatic proposal. Unless there is no floating potential at all, **try the analysis** (other regions, a narrower transition window, inspect ln(Ie)). Keep the result when the transition is clearly exponential (R² ≥ 0.98, or ≥ 0.9 on a doubtful curve) and Te is not stuck at the fit limit; report it with status `check` and say why it was doubtful. A failed rule-based proposal alone is never a reason to reject.
+   - **Not analysable** only when the hard reasons hold **and** the attempts confirm it (no exponential transition, the fit does not converge, Te at its limit). Then state it as **"not analysable"** with the reasons and the measured indicators, say what was tried and what could fix the measurement (probe cleaning, sweep range, gain, averaging more scans, RF compensation), and give **no** plasma parameters — not even as provisional numbers. In a batch, list these files separately and leave them out of every table of results and trend.
 
 1. **Parse**: XML (all `DataItem` blocks = Z-scan series) or CSV/TSV (V,I columns, µA/mA units auto-detected).
 2. **Floating potential Vf**: linear interpolation of the I = 0 crossing.
@@ -82,10 +94,10 @@ Analyse Langmuir probe traces with the pipeline in `langmuir_pipeline.py` (this 
 ## Reporting
 
 - Report: the RF compensation verdict (step 14), Vf, Vp (both values, ΔVp and the Vp check level with its reason), Tc/Th with fractions (or single Te if 1-T wins), Te from Vp − Vf (OML and planar) and whether it confirms the fit, ne with ~30% systematic uncertainty, ni (OML) and ni/ne, lambda_D, Iis at Vf, plus the caveats above.
-- **Status first**: start each trace with `good` or `check`, listing every quality flag, and the RF compensation verdict when it is not `good` (step 14). A trace with `Vp_check = review` (ΔVp > 5 V, or 2–5 V without Te confirmation) must be presented as **"needs review by eye"**: give the numbers only as provisional and never as final results; suggest which region to adjust (usually the saturation window or the transition window).
+- **Status first**: start each trace with `not analysable` (reasons only, no results; step 0), `good` or `check`, listing every quality flag, and the RF compensation verdict when it is not `good` (step 14). A trace with `Vp_check = review` (ΔVp > 5 V, or 2–5 V without Te confirmation) must be presented as **"needs review by eye"**: give the numbers only as provisional and never as final results; suggest which region to adjust (usually the saturation window or the transition window).
 - Cross-checks to state: predicted vs measured Vp−Vf, ne(fit) vs ne(EEDF), ni(OML) vs ne.
 - Always produce the plots (`--plots`) and reference them; for inline visuals in chat, load `rich-ui` and render from the `--npz` arrays: I–V curve, semilog Ie with fits (shows the two-slope structure), EEDF with Maxwellian overlay — the same three panels as the PNG. Subsample long series for charts and keep the full data in files.
-- For a batch, run the script over all files, then build one comparison table (per-file: status, Vf, Vp, ΔVp, Vp check, Tc, Th, ne, ni/ne) — trends across power/pressure/position are usually what the user wants. Mark traces that need review in the table and leave them out of trend statements until reviewed.
+- For a batch, run the script over all files, then build one comparison table (per-file: status, Vf, Vp, ΔVp, Vp check, Tc, Th, ne, ni/ne) — trends across power/pressure/position are usually what the user wants. Mark traces that need review in the table and leave them out of trend statements until reviewed. List not-analysable traces separately with their reasons (no numbers).
 
 ## Assumptions/limits
 

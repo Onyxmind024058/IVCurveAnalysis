@@ -33,8 +33,10 @@
     aigood: { text: "✓ AI pre-reviewed", title: "Pre-reviewed by the AI, all checks passed — still to be reviewed by a person" },
     aicheck: { text: "⚠ AI pre-reviewed", title: "Pre-reviewed by the AI, with warnings — review carefully" },
     aifailed: { text: "✗ AI no result", title: "The AI pre-review gave no result for this curve" },
+    ainone: { text: "— AI: not analysable", title: "The AI judges this curve not analysable — confirm it (untick “Analysable”) or analyse it yourself" },
   };
-  const AI_STATES = new Set(["aiqueued", "airunning", "aigood", "aicheck", "aifailed"]);
+  const AI_STATES = new Set(["aiqueued", "airunning", "aigood", "aicheck", "aifailed", "ainone"]);
+  const AI_DONE = ["aigood", "aicheck", "ainone"];  // curves with an AI result
   const DONE = new Set(["accepted", "auto", "rejected"]);
 
   const VARIABLES = [
@@ -213,6 +215,13 @@
 
   /** The agent's result becomes the curve's proposal (and its result until a person reviews it). */
   function applyAI(item, final, model, area) {
+    if (final.analysable === false) {
+      // the AI's verdict; the rules' proposal stays so a person can still try the curve
+      item.ai = { status: "not analysable", analysable: false, reason: final.reason, report: final.report, model, at: new Date().toISOString() };
+      item._aiFinal = { ...final, model };
+      if (!item.reviewed) { item.status = "ainone"; item.flags = [`AI: not analysable — ${final.reason}`]; }
+      return;
+    }
     const r = final.results;
     IV.app.addDerived(r, area);
     item.proposal = final.params;
@@ -232,6 +241,7 @@
   /** The curve's AI result in the form the AI window shows (rebuilt from the saved regions after reopening a batch). */
   function aiFinalOf(item) {
     if (item._aiFinal) return item._aiFinal;
+    if (item.ai && item.ai.analysable === false) return { analysable: false, reason: item.ai.reason, report: item.ai.report, model: item.ai.model, flags: [item.ai.reason], summary: { status: "not analysable" } };
     if (!item.ai || !item.proposal || !(item.proposalSource || "").startsWith("AI")) return null;
     try {
       const ctx = IV.agentTools.makeContext(IV.app.agentInput(IV.app.curveFor(item.scans), item.name));
@@ -261,7 +271,7 @@
     if (!open.length) { IV.ui.toast("No curves left to pre-review: all are reviewed, accepted or skipped."); return; }
     let ready = await IV.agentUI.prepare();
     if (!ready) return;
-    const withoutAI = open.filter((it) => !["aigood", "aicheck"].includes(it.status));
+    const withoutAI = open.filter((it) => !AI_DONE.includes(it.status));
     const flagged = open.filter((it) => !["good", "aigood"].includes(it.status));
     const excluded = batch.items.length - open.length;
     let choice;
@@ -297,7 +307,7 @@
     // a curve that already had an AI result keeps it; others are marked "no result"
     const fail = (item, why) => {
       failures.push([item.name, why]);
-      if (["aigood", "aicheck"].includes(before.get(item))) { item.status = before.get(item); return; }
+      if (AI_DONE.includes(before.get(item))) { item.status = before.get(item); return; }
       item.status = "aifailed";
       item.ai = { status: "no result", report: why, model: ready.label, at: new Date().toISOString() };
       item.flags = [why];
@@ -334,7 +344,8 @@
       `<p style="margin:0 0 8px"><b>${done}</b> of ${list.length} curve${list.length > 1 ? "s" : ""} pre-reviewed by the AI${failures.length ? `, <b>${failures.length}</b> without result` : ""}${list.length - done - failures.length > 0 ? `, ${list.length - done - failures.length} not reached` : ""}.</p>
        ${fatal ? `<p style="margin:0 0 8px;color:var(--red)">${IV.escape(fatal)}</p>` : ""}
        ${failures.length ? `<ul style="margin:0 0 8px;padding-left:18px">${failures.map(([name, why]) => `<li><b>${IV.escape(name)}</b>: ${IV.escape(why)}</li>`).join("")}</ul>` : ""}
-       <p class="muted" style="margin:0">Run the pre-review again with “Only without AI result” to retry the missing curves${fatal ? " after fixing the problem (AI settings…)" : ""}.</p>`);
+       ${failures.length || fatal || stopped ? `<p class="muted" style="margin:0">Run the pre-review again with “Only without AI result” to retry the missing curves${fatal ? " after fixing the problem (AI settings…)" : ""}.</p>` : ""}
+       ${list.some((it) => it.status === "ainone") ? `<p class="muted" style="margin:6px 0 0">Curves marked “— AI: not analysable” are left out of the plot and the summary; confirm or overrule the verdict when you review them.</p>` : ""}`);
     if (!stopped && !fatal && done > 0 && batch.items.filter((it) => it.results).length >= 2) aiSummary(ready);
   }
 
@@ -347,7 +358,8 @@
         file: it.name, param: it.param,
         status: it.status === "accepted" ? "reviewed by a person" : it.status === "rejected" ? "skipped (not analysable)"
           : it.status === "auto" ? "accepted without review" : it.status === "aigood" ? "pre-reviewed by the AI, no warning"
-          : it.status === "aicheck" ? "pre-reviewed by the AI, with warnings" : it.status === "aifailed" ? "AI gave no result (rules proposal or none)" : `rules proposal only (${it.status})`,
+          : it.status === "aicheck" ? "pre-reviewed by the AI, with warnings" : it.status === "aifailed" ? "AI gave no result (rules proposal or none)"
+          : it.status === "ainone" ? `judged NOT ANALYSABLE by the AI (${it.ai && it.ai.reason}); ignore its numbers` : `rules proposal only (${it.status})`,
         quality_flags: it.flags || [],
         Te_eV: r3(r.Te_eV), Te_VpVf_OML_eV: r3(r.Te_VpVf_OML_eV), Te_VpVf_planar_eV: r3(r.Te_VpVf_planar_eV),
         ne_m3: r3(r.ne_m3), ni_m3: r3(r.ni_m3), ni_over_ne: r3(r.ni_m3 / r.ne_m3),
@@ -643,9 +655,9 @@
     const numeric = withValue.length > 0 && withValue.every((p) => p.it.param !== "" && Number.isFinite(Number(p.it.param)));
     const xOf = (p) => (numeric ? Number(p.it.param) : p.k + 1);
     const group = (pred) => withValue.filter(pred).sort((a, b) => xOf(a) - xOf(b));
-    const all = group((p) => p.it.status !== "rejected");
+    const all = group((p) => p.it.status !== "rejected" && p.it.status !== "ainone");
     const reviewed = group((p) => p.it.status === "accepted");
-    const others = group((p) => p.it.status !== "accepted" && p.it.status !== "rejected");
+    const others = group((p) => !["accepted", "rejected", "ainone"].includes(p.it.status));
     const traces = [];
     const lo = getComputedStyle(document.documentElement).getPropertyValue("--text-lo").trim();
     if (all.length > 1) traces.push({ x: all.map(xOf), y: all.map((p) => p.y), name: "all curves", mode: "lines", width: 1, dash: "dot", color: lo });
