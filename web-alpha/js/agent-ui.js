@@ -404,7 +404,8 @@
       if (final.analysable === false) { showNotAnalysable(final, meta); return; }
       const s = final.summary, r = final.results;
       ui.last = final;
-      const good = s.status === "good";
+      const verdict = final.verdict || (s.status === "good" ? "good" : "check");
+      const pill = { good: ["good", "✓ good"], check: ["warn", "⚠ check"], bad: ["bad", "✗ bad curve"] }[verdict];
       const rows = [
         ["Floating potential Vf", v(s.Vf_V)],
         ["Vp from dI/dV", v(s.Vp_dIdV_V)],
@@ -420,15 +421,17 @@
       ];
       const reportText = () => [
         `AI analysis (${meta}; skill ${skillName}) — ${curve.file || "loaded data"}`,
-        `Status: ${s.status}${s.quality_flags.length ? `\n${s.quality_flags.map((f) => `- ${f}`).join("\n")}` : ""}`,
+        `Verdict: ${verdict}${final.verdict_reasons && final.verdict_reasons.length ? ` (${final.verdict_reasons.join("; ")})` : ""}\nStatus: ${s.status}${s.quality_flags.length ? `\n${s.quality_flags.map((f) => `- ${f}`).join("\n")}` : ""}`,
         rows.map(([k, x]) => `${k}: ${x}`).join("\n"),
         "", final.report,
       ].join("\n");
       resultBox.replaceChildren(...[
         el("div.agent-status", {}, [
-          el(`span.pill.${good ? "good" : "warn"}`, { text: good ? "✓ good" : "⚠ check" }),
+          el(`span.pill.${pill[0]}`, { text: pill[1] }),
           el("span.muted", { text: ` ${meta}` }),
         ]),
+        verdict !== "good" && final.verdict_reasons && final.verdict_reasons.length
+          ? el("p", { style: `margin:6px 0 0;${verdict === "bad" ? "color:var(--red)" : ""}` }, [el("b", { text: verdict === "bad" ? "Bad curve: " : "Check: " }), final.verdict_reasons.join("; ")]) : null,
         s.quality_flags.length ? el("ul.agent-flags", {}, s.quality_flags.map((f) => el("li", { text: f }))) : null,
         el("table.results", {}, rows.map(([k, x]) => el("tr", {}, [el("th", { text: k }), el("td", { text: x })]))),
         el("h3", { text: "Report of the agent" }),

@@ -143,7 +143,18 @@
     if (!vc.checked) flags.push("Vp check not possible: no fit-intersection Vp (no usable saturation region)");
     const rf = rfCheck(ctx, p, r.Te_eV);
     if (rf && rf.rf_compensation === "poor") flags.push(`RF compensation looks poor: rounded knee above Vp (${rf.knee_rounding_over_Te} Te; sharp knee < 0.4 Te)`);
-    return { results: r, flags, vpCheck: vc, factors: { OML: t.factorOML, planar: t.factorPlanar }, rf };
+    else if (rf && rf.rf_compensation === "doubtful") flags.push(`RF compensation doubtful: somewhat rounded knee above Vp (${rf.knee_rounding_over_Te} Te; sharp knee < 0.4 Te)`);
+    // problems that make the results untrustworthy as they are (verdict "bad"), the rest are minor
+    const d = r.diag || {};
+    const severe = [];
+    if (vc.checked && vc.level === "review") severe.push(`Vp check: review by eye (ΔVp ${sig(vc.diff, 3)} V)`);
+    if (rf && rf.rf_compensation === "poor") severe.push("RF compensation poor");
+    if (r.Te_check === "mismatch") severe.push("Te inconsistent with Te from Vp − Vf");
+    if (d.r2Trans < 0.98) severe.push(`transition not exponential (R² ${sig(d.r2Trans, 4)})`);
+    if (Number.isFinite(d.vMax) && r.Vp_dIdV > d.vMax - 0.03 * (d.vMax - d.vMin)) severe.push("Vp at the end of the sweep (no saturation measured)");
+    if (!(r.Te_eV >= 0.2 && r.Te_eV <= 30)) severe.push(`Te = ${sig(r.Te_eV, 3)} eV outside 0.2–30 eV`);
+    const severity = severe.length ? "severe" : flags.length ? "minor" : "ok";
+    return { results: r, flags, vpCheck: vc, factors: { OML: t.factorOML, planar: t.factorPlanar }, rf, severity, severe };
   }
 
   const VP_REASON = {
@@ -158,8 +169,9 @@
     const r = ev.results, d = r.diag || {};
     return {
       regions: regionsOf(p),
-      status: ev.flags.length ? "check" : "good",
+      status: ev.severe.length ? "bad" : ev.flags.length ? "check" : "good",
       quality_flags: ev.flags,
+      severe_problems: ev.severe,
       Vf_V: sig(r.Vf), Vp_dIdV_V: sig(r.Vp_dIdV), Vp_intersection_V: sig(r.Vp_intersection), Vp_final_V: sig(r.Vp),
       Vp_difference_V: sig(r.Vp_difference_V, 3),
       Vp_check: r.Vp_check,
@@ -229,7 +241,9 @@
       description: "Final step: the regions you choose and your report. The app evaluates them once more; the numbers shown to the user come from the app, not from your text.",
       parameters: { type: "object", properties: {
         ...REGION_PROPS,
-        report: { type: "string", description: "Report for the user (plain text, short paragraphs or lists): status first, then the results, the checks and the caveats, following the skill." },
+        verdict: { type: "string", enum: ["good", "check", "bad"], description: "Your verdict on the curve: good (results usable), check (usable with the stated caveats), bad (results not trustworthy as they are: needs re-analysis by hand or a new measurement). The app's own checks can only make it stricter." },
+        verdict_reason: { type: "string", description: "One sentence: why this verdict." },
+        report: { type: "string", description: "Report for the user (plain text, short paragraphs or lists): verdict and status first, then the results, the checks and the caveats, following the skill." },
       }, required: [...REGION_REQUIRED, "report"] } } },
   ];
 
@@ -374,9 +388,16 @@
           const p = paramsFrom(ctx, args);
           const ev = evaluate(ctx, p);
           const s = summary(ctx, p, ev);
+          // the stricter of the app's checks and the agent's own verdict
+          const rank = { good: 0, check: 1, bad: 2 };
+          const own = rank[args.verdict] !== undefined ? args.verdict : "good";
+          const verdict = Object.keys(rank)[Math.max(rank[s.status], rank[own])];
+          const reasons = [...ev.severe];
+          if (args.verdict_reason && rank[own] >= rank[s.status] && own !== "good") reasons.unshift(String(args.verdict_reason));
           return {
-            content: { accepted: true, status: s.status, quality_flags: s.quality_flags },
-            final: { params: p, results: ev.results, flags: ev.flags, summary: s, report: String(args.report || "") },
+            content: { accepted: true, verdict, status: s.status, severe_problems: ev.severe, quality_flags: s.quality_flags },
+            final: { params: p, results: ev.results, flags: ev.flags, summary: s, report: String(args.report || ""),
+              verdict, verdict_reasons: reasons.length ? reasons : verdict === "check" ? ev.flags : [] },
           };
         }
         default:

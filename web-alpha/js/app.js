@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.6.0-alpha.6";
+  const APP_VERSION = "2.6.0-alpha.7";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -652,6 +652,16 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.6.0-alpha.7",
+      title: "Batch view and AI verdict",
+      items: [
+        "Batch review: “Show: Parameter graph · Report · Curve” hides or shows each section on the right independently; the others take the space (all off: the table uses the full width). Remembered in this browser.",
+        "AI verdict per curve: “✓ AI pre-reviewed” (good), “⚠ AI: check” (usable with caveats) or “✗ AI: bad curve” (results not trustworthy: Vp check says review, poor RF compensation, Te inconsistent with Vp − Vf, transition not exponential, Vp at the end of the sweep, Te out of range). The app's checks can only make the AI's verdict stricter.",
+        "Bad curves are shown as red crosses in the parameter graph, left out of the trend line and the AI summary; the reasons appear in the report section and the AI window.",
+        "A doubtful RF compensation is now a minor flag (⚠ check). The skill and its Python pipeline use the same verdict (status good / check / bad).",
+      ],
+    },
     {
       version: "2.6.0-alpha.6",
       title: "AI: is the curve analysable?",

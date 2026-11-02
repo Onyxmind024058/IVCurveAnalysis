@@ -269,7 +269,7 @@ def safe_analyse(V, I, A, mass_amu=39.95):
             res["analysability"] = dict(pre, verdict="doubtful",
                                         note="pre-check said not analysable, but the transition is exponential (R2 = %.3f)" % res["r2_transition"])
             res["quality_flags"].append("analysed despite the pre-check: " + "; ".join(pre["hard_reasons"]))
-            res["status"] = "check"
+            res["status"] = "bad" if res.get("severe_problems") else "check"
         else:
             return rejected("no clean exponential transition (R2 = %s)" % (
                 "%.3f" % res["r2_transition"] if res.get("r2_transition") is not None else "n/a"))
@@ -445,6 +445,23 @@ def analyse(V, I, A, mass_amu=39.95, minTe=0.3, maxTe=8.0):
         rf_state = "good" if rf_ratio < RF_GOOD else ("doubtful" if rf_ratio <= RF_POOR else "poor")
     if rf_state == "poor":
         flags.append("RF compensation looks poor: rounded knee above Vp (%.2f Te; sharp knee < 0.4 Te)" % rf_ratio)
+    elif rf_state == "doubtful":
+        flags.append("RF compensation doubtful: somewhat rounded knee above Vp (%.2f Te; sharp knee < 0.4 Te)" % rf_ratio)
+
+    # problems that make the results untrustworthy as they are -> status "bad"
+    severe = []
+    if vpc["level"] == "review":
+        severe.append("Vp check: review by eye (dVp %.2f V)" % vpc["diff_V"])
+    if rf_state == "poor":
+        severe.append("RF compensation poor")
+    if te_ok is False:
+        severe.append("Te inconsistent with Te from Vp - Vf")
+    if r2_trans is not None and r2_trans < 0.98:
+        severe.append("transition not exponential (R2 %.3f)" % r2_trans)
+    if Vp > V.max() - LIMITS["edge_frac"] * (V.max() - V.min()):
+        severe.append("Vp at the end of the sweep (no saturation measured)")
+    if not (LIMITS["te_min"] <= T1 <= LIMITS["te_max"]):
+        severe.append("Te = %.2f eV outside %.1f-%.0f eV" % (T1, LIMITS["te_min"], LIMITS["te_max"]))
 
     res = dict(
         Vf_V=Vf, Vp_V=Vp, Vp_minus_Vf_V=Vp - Vf,
@@ -456,7 +473,8 @@ def analyse(V, I, A, mass_amu=39.95, minTe=0.3, maxTe=8.0):
         ni_OML_m3=ni, ni_over_ne=ni_ratio, ion_mass_amu=mass_amu,
         rf_knee_rounding_V=knee_rounding, rf_smoothing_window_V=win * step, rf_knee_rounding_over_Te=rf_ratio,
         rf_compensation=rf_state, VpVf_over_expected_OML=(Vp - Vf) / (factors[0] * T1),
-        quality_flags=flags, status="good" if not flags else "check",
+        quality_flags=flags, severe_problems=severe,
+        status="bad" if severe else ("check" if flags else "good"),
         noise_A=sig, ion_model=ion_model, ion_residual_A=r_ion,
         I_ion_at_Vf_A=float(f_ion(Vf, c0, v0)) if ion_model == "oml_sqrt" else float(f_ion(Vf)),
         I_is_at_Vmin_A=I_is,  # Iis convention of the app: I_ion_at_Vf_A
