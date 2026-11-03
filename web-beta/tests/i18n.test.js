@@ -19,9 +19,9 @@ require("../js/i18n.js");
 const IV = window.IV;
 const DICT = IV.I18N_DICT;
 
-test("every entry has all seven translations (de, fr, zh, ja, nl, pt, ur), with the same placeholders", () => {
+test("every entry has all eight translations (de, fr, zh, ja, nl, pt, ur, hi), with the same placeholders", () => {
   for (const [en, tr] of Object.entries(DICT)) {
-    assert.equal(tr.length, 7, en);
+    assert.equal(tr.length, 8, en);
     const ph = (s) => (s.match(/\{\d\}/g) || []).sort().join();
     for (const t of tr) {
       assert.ok(t && t.trim(), `empty translation for “${en}”`);
@@ -49,6 +49,9 @@ test("exact texts, patterns with numbers, nested patterns, line by line", () => 
   assert.equal(IV.t("AI verdict: bad"), "AI-oordeel: slecht");
   IV.i18n.setLang("pt");
   assert.equal(IV.t("Pre-reviewed by the AI: 3 of 4."), "Pré-revistas pela IA: 3 de 4.");
+  IV.i18n.setLang("hi");
+  assert.equal(IV.t("Review next ▶ (12 left)"), "अगले की समीक्षा करें ▶ (12 शेष)");
+  assert.equal(IV.i18n.rtl, false);
   IV.i18n.setLang("ur");
   assert.equal(IV.t("Cancel"), "منسوخ کریں");
   assert.equal(IV.i18n.rtl, true);
@@ -57,8 +60,8 @@ test("exact texts, patterns with numbers, nested patterns, line by line", () => 
   assert.equal(IV.i18n.rtl, false);
 });
 
-test("the selector lists the eight languages; the AI is told the language", () => {
-  assert.deepEqual(IV.i18n.LANGS.map(([c]) => c).sort(), ["de", "en", "fr", "ja", "nl", "pt", "ur", "zh"]);
+test("the selector lists the nine languages; the AI is told the language", () => {
+  assert.deepEqual(IV.i18n.LANGS.map(([c]) => c).sort(), ["de", "en", "fr", "hi", "ja", "nl", "pt", "ur", "zh"]);
   IV.i18n.setLang("ur");
   assert.equal(IV.i18n.languageName(), "Urdu");
   assert.equal(document.documentElement.dir, "rtl");

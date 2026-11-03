@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.6.0-beta.1";
+  const APP_VERSION = "2.6.0-beta.2";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -652,6 +652,13 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.6.0-beta.2",
+      title: "Hindi",
+      items: [
+        "The interface is now also available in Hindi (हिन्दी); the AI writes its reports, chat answers and the series summary in Hindi too.",
+      ],
+    },
     {
       version: "2.6.0-beta.1",
       title: "Beta: AI analysis and 8 languages",

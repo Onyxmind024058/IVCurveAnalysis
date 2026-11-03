@@ -1,6 +1,6 @@
 /* =============================================================================
    Interface languages: English (source), German, French, Simplified Chinese,
-   Japanese, Dutch, Portuguese (Portugal) and Urdu (written right to left).
+   Japanese, Dutch, Portuguese (Portugal), Hindi and Urdu (written right to left).
 
    The app is written in English; this module translates what is displayed:
    - IV.t(text): translation of one text (exact entry, or a pattern entry with
@@ -11,14 +11,14 @@
      from the English originals.
    Not translated: user data and file names, numbers, AI answers, the
    What's new history, and anything inside [data-no-i18n].
-   Translations are in i18n-dict.js (IV.I18N_DICT: English → [de, fr, zh, ja, nl, pt, ur]).
+   Translations are in i18n-dict.js (IV.I18N_DICT: English → [de, fr, zh, ja, nl, pt, ur, hi]).
    ============================================================================= */
 (function (IV) {
   "use strict";
 
   const LANGS = [["en", "English"], ["de", "Deutsch"], ["fr", "Français"], ["nl", "Nederlands"], ["pt", "Português"],
-    ["zh", "简体中文"], ["ja", "日本語"], ["ur", "اردو"]];
-  const COL = { de: 0, fr: 1, zh: 2, ja: 3, nl: 4, pt: 5, ur: 6 };
+    ["zh", "简体中文"], ["ja", "日本語"], ["hi", "हिन्दी"], ["ur", "اردو"]];
+  const COL = { de: 0, fr: 1, zh: 2, ja: 3, nl: 4, pt: 5, ur: 6, hi: 7 };
   const RTL = new Set(["ur"]);
   const HTML_LANG = { zh: "zh-Hans" };
   const KEY = "ivcurve.lang";
@@ -191,7 +191,7 @@
   }
 
   /** Name of the interface language, in English (for the AI). */
-  const languageName = () => ({ en: "English", de: "German", fr: "French", zh: "Simplified Chinese", ja: "Japanese", nl: "Dutch", pt: "European Portuguese (as written in Portugal)", ur: "Urdu" })[lang];
+  const languageName = () => ({ en: "English", de: "German", fr: "French", zh: "Simplified Chinese", ja: "Japanese", nl: "Dutch", pt: "European Portuguese (as written in Portugal)", ur: "Urdu", hi: "Hindi" })[lang];
 
   IV.i18n = { LANGS, get lang() { return lang; }, get rtl() { return RTL.has(lang); }, t, setLang, start, selector, languageName, onChange: (fn) => listeners.push(fn), seen, missing, baseTitle: "" };
   IV.t = t;
