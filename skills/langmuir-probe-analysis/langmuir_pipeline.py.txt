@@ -21,7 +21,8 @@ Quality rules (same as the IV Analyser UB app):
   Te check   fitted Te within [0.7*min, 1.3*max] of Te from Vp - Vf (OML and planar).
   RF check   knee rounding = (distance from the dI/dV peak to half the drop to the
              saturation slope - half the smoothing window) / Te:
-             < 0.4 good, 0.4-0.7 doubtful, > 0.7 poor (sharp knee ~ 0.1-0.3).
+             < 1.1 good, 1.1-1.5 doubtful, > 1.5 poor (sharp knee ~ 0.1-0.3;
+             1.1 ~ an RF ripple of about Te).
   Flags      transition R^2 < 0.995, ion-fit R^2 < 0.9, < 5 saturation points or no
              knee, Vp at the end of the sweep, Te outside 0.2-30 eV, ni/ne outside 0.2-5,
              RF compensation poor.
@@ -46,7 +47,7 @@ LIMITS = dict(r2_trans=0.995, r2_ion=0.9, min_sat_pts=5, edge_frac=0.03,
 # RF compensation from the knee: distance from the dI/dV peak to where dI/dV has
 # fallen halfway to the saturation slope, minus half the smoothing window, in Te.
 # Sharp knee ~0.1-0.3; RF ripple on the sheath voltage rounds the knee.
-RF_GOOD, RF_POOR = 0.4, 0.7
+RF_GOOD, RF_POOR = 1.1, 1.5
 
 
 def parse_xml(path):
@@ -444,9 +445,9 @@ def analyse(V, I, A, mass_amu=39.95, minTe=0.3, maxTe=8.0):
     else:
         rf_state = "good" if rf_ratio < RF_GOOD else ("doubtful" if rf_ratio <= RF_POOR else "poor")
     if rf_state == "poor":
-        flags.append("RF compensation looks poor: rounded knee above Vp (%.2f Te; sharp knee < 0.4 Te)" % rf_ratio)
+        flags.append("RF compensation looks poor: rounded knee above Vp (%.2f Te; sharp knee < 1.1 Te)" % rf_ratio)
     elif rf_state == "doubtful":
-        flags.append("RF compensation doubtful: somewhat rounded knee above Vp (%.2f Te; sharp knee < 0.4 Te)" % rf_ratio)
+        flags.append("RF compensation doubtful: somewhat rounded knee above Vp (%.2f Te; sharp knee < 1.1 Te)" % rf_ratio)
 
     # problems that make the results untrustworthy as they are -> status "bad"
     severe = []

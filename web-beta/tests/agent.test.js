@@ -194,7 +194,7 @@ test("series summary: one request without tools, rows sent as JSON", async () =>
   assert.match(seen[0].body.messages[1].content, /Pressure \(Pa\)[\s\S]*"file":"a\.lda"/);
 });
 
-test("RF compensation: a rounded knee (RF ripple ≈ Te) is reported, a sharp one is not", () => {
+test("RF compensation: a strongly rounded knee (RF ripple ≈ 2 Te) is poor; a ripple of Te/2 is still good", () => {
   const mi = AR * N.AMU, Ie0 = AREA * 1e16 * e * Math.sqrt((e * 3) / (2 * Math.PI * me));
   const I0 = (v) => -AREA * 1e16 * e * (Math.SQRT2 / Math.PI) * Math.sqrt(Math.max((e * (10 - v)) / mi, 0))
     + (v < 10 ? Ie0 * Math.exp((v - 10) / 3) : Ie0 * (1 + 0.004 * (v - 10)));
@@ -202,8 +202,9 @@ test("RF compensation: a rounded knee (RF ripple ≈ Te) is reported, a sharp on
   // time average over an RF ripple of amplitude amp on the sheath voltage
   const withRipple = (amp) => V.map((v) => { let a = 0; for (let k = 0; k < 64; k++) a += I0(v + amp * Math.sin((2 * Math.PI * k) / 64)); return a / 64; });
   const check = (amp) => T.call(T.makeContext({ V, I: withRipple(amp), area: AREA, massAmu: AR }), "propose_regions").content;
-  const clean = check(0), rf = check(3);
+  const clean = check(0), rf = check(6), mild = check(1.5);
   assert.equal(clean.rf_check.rf_compensation, "good");
+  assert.equal(mild.rf_check.rf_compensation, "good", "real curves are rounder than simulated ones: limits are generous");
   assert.ok(!clean.quality_flags.some((f) => /RF/.test(f)));
   assert.equal(rf.rf_check.rf_compensation, "poor");
   assert.ok(rf.rf_check.knee_rounding_over_Te > clean.rf_check.knee_rounding_over_Te + 0.5);
