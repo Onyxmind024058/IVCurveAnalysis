@@ -95,10 +95,11 @@
    * RF ripple on the sheath voltage rounds the knee and stretches that drop.
    * Measure: distance from the peak to where dIe/dV has fallen halfway to the
    * saturation level, minus half the smoothing window, in units of Te.
-   * Limits from simulated ripple (sharp knee ≈ 0.1–0.3): < 0.4 good,
-   * 0.4–0.7 doubtful, > 0.7 poor (ripple of about Te or more).
+   * Limits (sharp simulated knee ≈ 0.1–0.3; real, well-compensated curves are
+   * rounder): < 1.1 good, 1.1–1.5 doubtful, > 1.5 poor. In simulations a
+   * rounding of 1.1–1.5 Te comes from an RF ripple of about Te.
    */
-  const RF_LIMITS = { good: 0.4, poor: 0.7 };
+  const RF_LIMITS = { good: 1.1, poor: 1.5 };
   function rfCheck(ctx, p, Te) {
     try {
       const { Ie } = A.electronCurrent(ctx.V, ctx.I, p);
@@ -142,8 +143,8 @@
     const flags = A.qualityFlags(r, { ni_m3: r.ni_m3, Te_VpVf_OML_eV: r.Te_VpVf_OML_eV, Te_VpVf_planar_eV: r.Te_VpVf_planar_eV });
     if (!vc.checked) flags.push("Vp check not possible: no fit-intersection Vp (no usable saturation region)");
     const rf = rfCheck(ctx, p, r.Te_eV);
-    if (rf && rf.rf_compensation === "poor") flags.push(`RF compensation looks poor: rounded knee above Vp (${rf.knee_rounding_over_Te} Te; sharp knee < 0.4 Te)`);
-    else if (rf && rf.rf_compensation === "doubtful") flags.push(`RF compensation doubtful: somewhat rounded knee above Vp (${rf.knee_rounding_over_Te} Te; sharp knee < 0.4 Te)`);
+    if (rf && rf.rf_compensation === "poor") flags.push(`RF compensation looks poor: rounded knee above Vp (${rf.knee_rounding_over_Te} Te; sharp knee < 1.1 Te)`);
+    else if (rf && rf.rf_compensation === "doubtful") flags.push(`RF compensation doubtful: somewhat rounded knee above Vp (${rf.knee_rounding_over_Te} Te; sharp knee < 1.1 Te)`);
     // problems that make the results untrustworthy as they are (verdict "bad"), the rest are minor
     const d = r.diag || {};
     const severe = [];

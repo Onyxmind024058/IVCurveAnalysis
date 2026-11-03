@@ -7,7 +7,7 @@
   const { el, fmtG, fmtE, toast } = IV.ui;
 
   // Single source of the version shown in the app and in "What's new".
-  const APP_VERSION = "2.6.0-beta.2";
+  const APP_VERSION = "2.6.0-beta.3";
   const SETTINGS_KEY = "ivcurve.settings.v1";
 
   IV.APP_VERSION = APP_VERSION;
@@ -652,6 +652,14 @@
 
   /** Newest first. Add an entry (and bump APP_VERSION) for every release. */
   const CHANGELOG = [
+    {
+      version: "2.6.0-beta.3",
+      title: "More tolerant RF compensation check",
+      items: [
+        "The knee-rounding limits of the RF compensation check are raised: good below 1.1 Te, doubtful 1.1–1.5 Te, poor above 1.5 Te (before: 0.4 and 0.7). Real, well-compensated curves have a rounder knee than simulated ones and were flagged too often; in simulations a rounding of 1.1–1.5 Te comes from an RF ripple of about Te, the usual limit for RF compensation.",
+        "The built-in skill and its Python pipeline use the same limits.",
+      ],
+    },
     {
       version: "2.6.0-beta.2",
       title: "Hindi",
